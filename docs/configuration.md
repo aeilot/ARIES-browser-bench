@@ -604,6 +604,18 @@ so the task image must provide `/bin/bash`. Its `~/.hermes` file sync is refused
 the bridge to keep the evaluated sandbox free of harness scaffold and
 credentials; Hermes logs one `file_sync: sync failed` warning and continues.
 
+Hermes's own browser tools (`browser_exec` and the `browser_*` family) drive a
+browser inside the harness runtime, outside the sandbox and its measurements.
+Hermes v2026.8.31 adds its `browser` toolset back to an explicit platform
+toolset list, so the rendered `config.yaml` names `browser`, `browser-cdp` and
+`web` in `agent.disabled_toolsets` unless `harness.web_search` is enabled.
+Hermes's `browser` toolset also carries `web_search`, and disabling a toolset
+removes all of its tools, so with web search enabled only `browser-cdp` is
+disabled: `browser_exec` then stays available and browses from the harness,
+which matters for experiments that measure sandbox load. Hermes also aliases
+each MCP server's toolset to the server's name, so an MCP server must not be
+named after a disabled toolset.
+
 Hermes reserves environment names beginning with `API_SERVER_` for its Gateway.
 Do not use them as `model.api_key_env` or MCP `secret_env` source names. MCP
 child environment names may still use that prefix with a different source.
@@ -737,6 +749,17 @@ these guides:
   `credential_files_env`, which map the token fields and key files of the
   account-backed tasks to environment variables; the profile names variables,
   never values.
+
+- [browserbench](benchmarks/browserbench.md) requires `environment.image`
+  (Playwright MCP's image) and a harness with an MCP client. Task IDs are
+  AssistantBench dev IDs. The adapter adds the in-sandbox browser to the
+  harness's MCP servers as `playwright`, so `harness.mcp_servers` may not name
+  `playwright`. The optional `browserbench` block sets `mcp_port`,
+  `mcp_call_timeout_seconds` (the harness's bound on one browser call), and
+  `blocked_origins`, passed to Playwright MCP's `--blocked-origins`. It rejects
+  `judge`, `fact`, and `toolathlon`, and other benchmarks reject the
+  `browserbench` block. Leave `harness.web_search` disabled: harness-side web
+  tools browse outside the sandbox.
 
 ### Judge model settings
 

@@ -49,6 +49,7 @@ func validateComponents(cfg config.Config) error {
 		if err := benchmarkwiring.ValidateToolathlon(cfg); err != nil {
 			return err
 		}
+	case "browserbench":
 	default:
 		return fmt.Errorf("unsupported benchmark type %q", cfg.Benchmark.Type)
 	}
@@ -117,6 +118,8 @@ func benchmarkForTasks(cfg config.Config, outputRoot string, taskIDs, executionI
 		return benchmarkwiring.NewSWEAtlas(cfg, outputRoot, taskIDs, executionIDs, lookup)
 	case "toolathlon":
 		return benchmarkwiring.NewToolathlon(cfg, outputRoot, taskIDs, executionIDs, lookup)
+	case "browserbench":
+		return benchmarkwiring.NewBrowserBench(cfg, outputRoot, taskIDs, executionIDs)
 	default:
 		return nil, fmt.Errorf("unsupported benchmark type %q", cfg.Benchmark.Type)
 	}
@@ -213,6 +216,8 @@ func setupBenchmark(ctx context.Context, cfg config.Config) error {
 		return benchmarkwiring.SetupSWEbenchPro(ctx, cfg)
 	case "toolathlon":
 		return benchmarkwiring.SetupToolathlon(ctx, cfg)
+	case "browserbench":
+		return benchmarkwiring.SetupBrowserBench(ctx, cfg)
 	default:
 		return fmt.Errorf("unsupported benchmark type %q", cfg.Benchmark.Type)
 	}

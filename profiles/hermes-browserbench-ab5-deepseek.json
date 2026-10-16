@@ -1,0 +1,56 @@
+{
+  "name": "hermes-browserbench-ab5-deepseek",
+  "versions_file": "../configs/versions.json",
+  "overrides_file": "",
+  "execution": {
+    "concurrency": 1
+  },
+  "benchmark": {
+    "type": "browserbench",
+    "root": ".cache/browserbench",
+    "tasks": [
+      "2aa5dd83fbcd0dce9a3dd4592106e5b5edf738008d932e357d477bba80e59ccf",
+      "9baaa267c95f9d8b75741ee9169c50563d297cfa592c20deaffd30dbc5984c74",
+      "e2dc3a6b10b762e8aba7fa4d4e70f757f6d04dcbc8b56c48fc53fd9928d31d07",
+      "8fa42360185068216f2919935148d4e1ad28ddc18da0abd0f4bb0b6b6f84b127",
+      "efc0f3a47e9ed2ecdbcc037c2093865fe6e39f4d413a5d1ccdc7357160a4606b"
+    ],
+    "environment": {
+      "image": "mcr.microsoft.com/playwright/mcp:v0.0.83",
+      "workdir": "/home/node"
+    }
+  },
+  "harness": {
+    "type": "hermes",
+    "deployment": {
+      "backend": "docker",
+      "docker": {
+        "socket": "/var/run/docker.sock"
+      }
+    }
+  },
+  "sandbox": {
+    "deployment": {
+      "backend": "docker",
+      "docker": {
+        "socket": "/var/run/docker.sock"
+      }
+    }
+  },
+  "bridge": {
+    "deployment": { "backend": "docker" },
+    "type": "hermes-ssh",
+    "mode": "managed"
+  },
+  "runtime": {
+    "backend": "deepseek",
+    "mode": "external"
+  },
+  "model": {
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "id": "deepseek-flash",
+    "reasoning_effort": "low"
+  },
+  "output_dir": "runs"
+}

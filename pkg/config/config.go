@@ -128,6 +128,23 @@ type BenchmarkConfig struct {
 	Judge       *JudgeConfig          `json:"judge,omitempty"`
 	Fact        *FactConfig           `json:"fact,omitempty"`
 	Toolathlon  *ToolathlonConfig     `json:"toolathlon,omitempty"`
+	// BrowserBench tunes the browserbench adapter; it is rejected under any
+	// other benchmark type.
+	BrowserBench *BrowserBenchConfig `json:"browserbench,omitempty"`
+}
+
+// BrowserBenchConfig tunes the browserbench adapter (see BenchmarkConfig).
+// All fields are optional. The browser runs in the task sandbox as a
+// Playwright MCP server the harness reaches over streamable HTTP.
+type BrowserBenchConfig struct {
+	// MCPPort is the in-sandbox port of the Playwright MCP server.
+	MCPPort int `json:"mcp_port,omitempty"`
+	// MCPCallTimeoutSeconds bounds one browser tool call at the harness.
+	MCPCallTimeoutSeconds int `json:"mcp_call_timeout_seconds,omitempty"`
+	// BlockedOrigins are passed to Playwright MCP's --blocked-origins. They
+	// steer the browser away from answer leaks; Playwright documents that the
+	// list is not a security boundary.
+	BlockedOrigins []string `json:"blocked_origins,omitempty"`
 }
 
 // ToolathlonConfig tunes the Toolathlon adapter (see BenchmarkConfig). All
@@ -475,6 +492,7 @@ type Versions struct {
 	SWEAtlas          SWEAtlasVersions          `json:"sweatlasqa"`
 	SWEbenchPro       SWEbenchProVersions       `json:"swebenchpro"`
 	Toolathlon        ToolathlonVersions        `json:"toolathlon,omitempty"`
+	BrowserBench      BrowserBenchVersions      `json:"browserbench,omitempty"`
 	OpenClaw          OpenClawVersions          `json:"openclaw"`
 	Hermes            HermesVersions            `json:"hermes"`
 }
@@ -485,6 +503,34 @@ type Versions struct {
 type ToolathlonVersions struct {
 	RepositoryURL string `json:"repository_url"`
 	Revision      string `json:"revision"`
+}
+
+// BrowserBenchVersions pins the browserbench datasets. Like the Toolathlon
+// pin, it is required only when a profile selects the browserbench benchmark.
+type BrowserBenchVersions struct {
+	AssistantBench AssistantBenchVersions `json:"assistantbench"`
+}
+
+// AssistantBenchVersions pins one file of the AssistantBench Hugging Face
+// dataset repository by revision and content digest.
+type AssistantBenchVersions struct {
+	RepositoryURL string `json:"repository_url"`
+	Revision      string `json:"revision"`
+	DevFile       string `json:"dev_file"`
+	DevSHA256     string `json:"dev_sha256"`
+}
+
+func (v AssistantBenchVersions) validate() error {
+	if err := validateRepositoryPin("browserbench.assistantbench", v.RepositoryURL, v.Revision); err != nil {
+		return err
+	}
+	if v.DevFile == "" || v.DevFile != filepath.Base(v.DevFile) || !strings.HasSuffix(v.DevFile, ".jsonl") {
+		return errors.New("browserbench.assistantbench.dev_file must be a .jsonl file name")
+	}
+	if !isHex(v.DevSHA256, 64) || strings.ToLower(v.DevSHA256) != v.DevSHA256 {
+		return errors.New("browserbench.assistantbench.dev_sha256 must be a lowercase SHA-256 digest")
+	}
+	return nil
 }
 
 type TerminalBench2Versions struct {
@@ -554,6 +600,11 @@ func Load(path string) (Config, error) {
 	// so the optional Toolathlon pin is required here, once both are loaded.
 	if cfg.Benchmark.Type == "toolathlon" {
 		if err := validateRepositoryPin("toolathlon", versions.Toolathlon.RepositoryURL, versions.Toolathlon.Revision); err != nil {
+			return Config{}, fmt.Errorf("load version pins: %w", err)
+		}
+	}
+	if cfg.Benchmark.Type == "browserbench" {
+		if err := versions.BrowserBench.AssistantBench.validate(); err != nil {
 			return Config{}, fmt.Errorf("load version pins: %w", err)
 		}
 	}
@@ -857,7 +908,37 @@ func validateHTTPBaseURL(name, value string) error {
 // the wiring layer's ValidateComponents responsibility, so unknown types
 // still decode into a Config for that check to inspect and reject.
 func (c *Config) validateBenchmarkType() error {
+	if c.Benchmark.BrowserBench != nil && c.Benchmark.Type != "browserbench" {
+		return fmt.Errorf("benchmark.browserbench must not be set for %s", c.Benchmark.Type)
+	}
 	switch c.Benchmark.Type {
+	case "browserbench":
+		if c.Benchmark.Environment == nil || strings.TrimSpace(c.Benchmark.Environment.Image) == "" {
+			return errors.New("benchmark.environment.image is required for browserbench")
+		}
+		if c.Benchmark.Judge != nil {
+			return errors.New("judge must not be set for browserbench")
+		}
+		if c.Benchmark.Fact != nil {
+			return errors.New("fact must not be set for browserbench")
+		}
+		if c.Benchmark.Toolathlon != nil {
+			return errors.New("benchmark.toolathlon must not be set for browserbench")
+		}
+		if settings := c.Benchmark.BrowserBench; settings != nil {
+			if settings.MCPPort != 0 && (settings.MCPPort < 1024 || settings.MCPPort > 65535) {
+				return errors.New("benchmark.browserbench.mcp_port must be between 1024 and 65535")
+			}
+			if settings.MCPCallTimeoutSeconds < 0 {
+				return errors.New("benchmark.browserbench.mcp_call_timeout_seconds must be positive")
+			}
+			for _, origin := range settings.BlockedOrigins {
+				if strings.TrimSpace(origin) == "" || strings.ContainsAny(origin, "; \t\n\x00") {
+					return fmt.Errorf("benchmark.browserbench.blocked_origins entry %q must be one origin without separators or whitespace", origin)
+				}
+			}
+		}
+		return nil
 	case "deepresearchbench":
 		if c.Benchmark.Environment == nil || strings.TrimSpace(c.Benchmark.Environment.Image) == "" {
 			return errors.New("benchmark.environment.image is required for deepresearchbench")
@@ -1318,6 +1399,11 @@ func (c Versions) validate() error {
 	}
 	if c.Toolathlon != (ToolathlonVersions{}) {
 		if err := validateRepositoryPin("toolathlon", c.Toolathlon.RepositoryURL, c.Toolathlon.Revision); err != nil {
+			return err
+		}
+	}
+	if c.BrowserBench != (BrowserBenchVersions{}) {
+		if err := c.BrowserBench.AssistantBench.validate(); err != nil {
 			return err
 		}
 	}

@@ -175,6 +175,31 @@ Sources: [preparation](../../pkg/benchmark/swebenchpro/sandbox.go),
 See the [usage guide](../benchmarks/swe-bench-pro.md) for pins, prerequisites,
 result artifacts, public-data limitations, and licensing.
 
+## browserbench
+
+The task image is Playwright MCP's own. Preparation clears the answer path,
+starts the MCP server in the background from `/tmp/aries-browser` (headless
+Chromium, in-memory profile, any host name allowed because the harness
+addresses the sandbox by its runtime name), and waits until it listens. Each
+task declares the server as a sandbox MCP service over streamable HTTP; the
+deployment resolves its address and the harness adds it as `playwright`
+(not `browser`, which Hermes would alias to its own browser toolset). Tasks
+come from the pinned AssistantBench dev file, whose SHA-256 is checked at
+setup, at task load and before evaluation; gold answers stay on the host.
+
+Evaluation downloads the answer file and the server log with bounded
+downloads and scores the answer host-side with a Go port of AssistantBench's
+`question_scorer`, as BrowserGym vendors it. The port models the Python
+values the scorer branches on, including the inputs on which it raises; a
+recorded table of upstream results checks it case by case.
+
+Sources: [task loading](../../pkg/benchmark/browserbench/browserbench.go),
+[preparation](../../pkg/benchmark/browserbench/sandbox.go),
+[evaluation](../../pkg/benchmark/browserbench/evaluate.go),
+[scorer port](../../pkg/benchmark/browserbench/score.go), and
+[tests](../../pkg/benchmark/browserbench/browserbench_test.go).
+See the [usage guide](../benchmarks/browserbench.md).
+
 ## Toolathlon
 
 Toolathlon's own decoupled runner already splits a task the way ARIES does.

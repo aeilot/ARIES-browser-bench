@@ -25,6 +25,14 @@
     "repository_url": "https://github.com/hkust-nlp/Toolathlon.git",
     "revision": "9be8d8fe07a497b18ee61e3f2ae694e9797f39eb"
   },
+  "browserbench": {
+    "assistantbench": {
+      "repository_url": "https://huggingface.co/datasets/AssistantBench/AssistantBench",
+      "revision": "482cbbc0400f6d048438c4021727f21a10cbff49",
+      "dev_file": "assistant_bench_v1.0_dev.jsonl",
+      "dev_sha256": "c1abd710b99d6f810e2ce95cb6c43f31828dacd778c9e4d9dd4ddad2eaee6ac4"
+    }
+  },
   "openclaw": {
     "image": "ghcr.io/openclaw/openclaw:2026.7.1"
   },
