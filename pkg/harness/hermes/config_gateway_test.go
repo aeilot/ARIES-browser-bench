@@ -18,7 +18,7 @@ func TestGatewayConfigPreservesNativeDefaultsAndExplicitDelegationPolicy(t *test
 			t.Errorf("overrode native default %q", section)
 		}
 	}
-	if !strings.Contains(string(rendered), "\nagent:\n  max_turns: 10\n  disabled_toolsets:\n    - delegation\n") {
+	if !strings.Contains(string(rendered), "\nagent:\n  max_turns: 10\n  disabled_toolsets:\n    - delegation\n    - browser\n    - browser-cdp\n    - web\n") {
 		t.Fatal("missing explicit delegation policy")
 	}
 	if strings.Contains(string(rendered), "\ndisabled_toolsets:") {
@@ -35,8 +35,8 @@ func TestGatewayConfigExplicitlyEnablesDelegation(t *testing.T) {
 	if !strings.Contains(text, "    - delegation\n") || !strings.Contains(text, "\ndelegation:\n  max_concurrent_children: 2\n") {
 		t.Fatal("delegation not enabled and bounded")
 	}
-	if strings.Contains(text, "disabled_toolsets:") {
-		t.Fatal("enabled delegation has denylist")
+	if strings.Contains(text, "disabled_toolsets:\n    - delegation\n") {
+		t.Fatal("enabled delegation is on the denylist")
 	}
 }
 

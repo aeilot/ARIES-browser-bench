@@ -74,6 +74,13 @@ type renderSettings struct {
 // file access and code execution (core.Task.NoSandboxTools withholds them).
 var sandboxToolsets = []string{"terminal", "file", "code_execution"}
 
+// harnessBrowserToolsets drive a browser inside the harness runtime, outside
+// the sandbox and its measurements. Hermes v2026.8.31 adds "browser" (which
+// also carries web_search) back to an explicit platform toolset list, so
+// only disabled_toolsets keeps them off; with web search on, "browser" stays
+// (see renderConfig).
+var harnessBrowserToolsets = []string{"browser", "browser-cdp"}
+
 // renderConfig produces the Hermes `config.yaml`. The credential is written as
 // a ${NAME} reference rather than a value: Hermes expands those from the process
 // environment (hermes_cli/config.py::_expand_env_vars), and the Gateway launcher
@@ -223,12 +230,19 @@ func renderConfig(model core.ModelConfig, settings renderSettings, voiceSTT *Voi
 		// keeps them off whatever a toolset's own default is.
 		disabled = append(disabled, sandboxToolsets...)
 	}
-	if len(disabled) > 0 {
-		// The native API resolves this nested denylist after platform toolsets.
-		output.WriteString("  disabled_toolsets:\n")
-		for _, toolset := range disabled {
-			output.WriteString("    - " + toolset + "\n")
-		}
+	if settings.webSearchEnabled {
+		// Hermes's "browser" toolset also carries web_search, and disabling
+		// a toolset removes all its tools, so web search keeps it: only the
+		// CDP tools go, and browser_exec stays available in the harness.
+		disabled = append(disabled, "browser-cdp")
+	} else {
+		disabled = append(disabled, harnessBrowserToolsets...)
+		disabled = append(disabled, "web")
+	}
+	// The native API resolves this nested denylist after platform toolsets.
+	output.WriteString("  disabled_toolsets:\n")
+	for _, toolset := range disabled {
+		output.WriteString("    - " + toolset + "\n")
 	}
 	if settings.compaction != nil {
 		output.WriteString("\ncompression:\n")

@@ -250,8 +250,15 @@ func TestContainerEnvironmentRejectsUnusableEndpoints(t *testing.T) {
 	}
 }
 
-// Disabled web search must leave today's toolset list and environment
-// unchanged — a regression guard for callers that never opt in.
+// platformToolsets is the rendered api_server toolset list.
+func platformToolsets(text string) string {
+	_, after, _ := strings.Cut(text, "\nplatform_toolsets:\n")
+	section, _, _ := strings.Cut(after, "\n\n")
+	return section
+}
+
+// Disabled web search leaves web out of the toolset list and on the
+// denylist, so Hermes's own default cannot bring it back.
 func TestRenderConfigOmitsWebToolsetWhenDisabled(t *testing.T) {
 	rendered, err := renderConfig(validModel(), renderSettings{maxTurns: 90, webSearchEnabled: false, extractEnabled: false, subagentsEnabled: true, maxConcurrentSubagents: 0}, nil)
 
@@ -259,7 +266,7 @@ func TestRenderConfigOmitsWebToolsetWhenDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(rendered)
-	if strings.Contains(text, "- web") || strings.Contains(text, "\nweb:") {
+	if strings.Contains(platformToolsets(text), "- web") || strings.Contains(text, "\nweb:") || !strings.Contains(text, "    - browser-cdp\n    - web\n") {
 		t.Fatalf("config unexpectedly enables the web toolset:\n%s", text)
 	}
 }
@@ -315,7 +322,7 @@ func TestRenderConfigOmitsExtractBackendWhenWebSearchDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(rendered)
-	if strings.Contains(text, "- web") || strings.Contains(text, "\nweb:") || strings.Contains(text, "extract_backend") {
+	if strings.Contains(platformToolsets(text), "- web") || strings.Contains(text, "\nweb:") || strings.Contains(text, "extract_backend") {
 		t.Fatalf("config unexpectedly enables web/extract while web search is disabled:\n%s", text)
 	}
 }
@@ -332,15 +339,39 @@ func TestRenderConfigDisablesDelegationToolsetWhenSubagentsDisabled(t *testing.T
 	}
 }
 
-func TestRenderConfigOmitsDisabledToolsetsWhenSubagentsEnabled(t *testing.T) {
+func TestRenderConfigKeepsDelegationWhenSubagentsEnabled(t *testing.T) {
 	rendered, err := renderConfig(validModel(), renderSettings{maxTurns: 90, webSearchEnabled: false, extractEnabled: false, subagentsEnabled: true, maxConcurrentSubagents: 0}, nil)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(rendered)
-	if strings.Contains(text, "disabled_toolsets") {
-		t.Fatalf("config unexpectedly disables toolsets while subagents are enabled:\n%s", text)
+	if !strings.Contains(text, "\n  disabled_toolsets:\n    - browser\n    - browser-cdp\n    - web\n\n") {
+		t.Fatalf("config disables more than the harness browser and web while subagents are enabled:\n%s", text)
+	}
+}
+
+// Hermes's own browser runs in the harness runtime, outside the sandbox, so
+// it is on the denylist with web unless web search is on. Its "browser"
+// toolset also carries web_search, so web search keeps it and only the CDP
+// tools are denied.
+func TestRenderConfigDisablesHarnessBrowserUnlessWebSearch(t *testing.T) {
+	for _, web := range []bool{false, true} {
+		rendered, err := renderConfig(validModel(), renderSettings{maxTurns: 90, webSearchEnabled: web, subagentsEnabled: true}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(rendered)
+		want := "\n  disabled_toolsets:\n    - browser\n    - browser-cdp\n    - web\n"
+		if web {
+			want = "\n  disabled_toolsets:\n    - browser-cdp\n"
+		}
+		if !strings.Contains(text, want+"\n") {
+			t.Fatalf("web search %v: denylist is not %q:\n%s", web, want, text)
+		}
+		if strings.Contains(platformToolsets(text), "browser") {
+			t.Fatalf("web search %v: platform toolsets name a browser:\n%s", web, text)
+		}
 	}
 }
 
@@ -575,7 +606,7 @@ func TestRenderConfig_NoSandboxToolsLeavesOnlyMCPAndWeb(t *testing.T) {
 	}
 	text := render(true, false)
 	for _, want := range []string{
-		"\n  disabled_toolsets:\n    - delegation\n    - terminal\n    - file\n    - code_execution\n",
+		"\n  disabled_toolsets:\n    - delegation\n    - terminal\n    - file\n    - code_execution\n    - browser\n    - browser-cdp\n    - web\n",
 		"\nplatform_toolsets:\n  api_server: []\n",
 		"\nmcp_servers:\n  toolathlon:\n",
 	} {
@@ -586,7 +617,7 @@ func TestRenderConfig_NoSandboxToolsLeavesOnlyMCPAndWeb(t *testing.T) {
 	if text := render(true, true); !strings.Contains(text, "\nplatform_toolsets:\n  api_server:\n    - web\n\nweb:\n") {
 		t.Fatalf("web search not kept on its own:\n%s", text)
 	}
-	if text := render(false, false); !strings.Contains(text, "\n  disabled_toolsets:\n    - delegation\n\n") ||
+	if text := render(false, false); !strings.Contains(text, "\n  disabled_toolsets:\n    - delegation\n    - browser\n    - browser-cdp\n    - web\n\n") ||
 		!strings.Contains(text, "\nplatform_toolsets:\n  api_server:\n    - terminal\n    - file\n    - code_execution\n") {
 		t.Fatalf("the default toolsets changed:\n%s", text)
 	}
