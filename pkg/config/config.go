@@ -145,6 +145,9 @@ type BrowserBenchConfig struct {
 	// steer the browser away from answer leaks; Playwright documents that the
 	// list is not a security boundary.
 	BlockedOrigins []string `json:"blocked_origins,omitempty"`
+	// NetworkTiming records the browser's request and page-load timing in
+	// the sandbox; it defaults to true.
+	NetworkTiming *bool `json:"network_timing,omitempty"`
 }
 
 // ToolathlonConfig tunes the Toolathlon adapter (see BenchmarkConfig). All

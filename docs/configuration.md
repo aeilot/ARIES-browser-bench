@@ -758,8 +758,10 @@ these guides:
   AssistantBench dev IDs. The adapter adds the in-sandbox browser to the
   harness's MCP servers as `playwright`, so `harness.mcp_servers` may not name
   `playwright`. The optional `browserbench` block sets `mcp_port`,
-  `mcp_call_timeout_seconds` (the harness's bound on one browser call), and
-  `blocked_origins`, passed to Playwright MCP's `--blocked-origins`. It rejects
+  `mcp_call_timeout_seconds` (the harness's bound on one browser call),
+  `blocked_origins`, passed to Playwright MCP's `--blocked-origins`, and
+  `network_timing` (default true), which records the browser's request and
+  page-load timing in the sandbox. It rejects
   `judge`, `fact`, and `toolathlon`, and other benchmarks reject the
   `browserbench` block. Leave `harness.web_search` disabled: harness-side web
   tools browse outside the sandbox.

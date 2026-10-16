@@ -16,11 +16,15 @@ func NewBrowserBench(cfg config.Config, outputRoot string, taskIDs, executionIDs
 		OutputDir:        outputRoot,
 		Dataset:          browserBenchDataset(cfg),
 		Environment:      environmentFromConfig(cfg.Benchmark.Environment),
+		NetworkTiming:    true,
 	}
 	if settings := cfg.Benchmark.BrowserBench; settings != nil {
 		options.MCPPort = settings.MCPPort
 		options.MCPCallTimeout = settings.MCPCallTimeoutSeconds
 		options.BlockedOrigins = settings.BlockedOrigins
+		if settings.NetworkTiming != nil {
+			options.NetworkTiming = *settings.NetworkTiming
+		}
 	}
 	return browserbench.New(options)
 }

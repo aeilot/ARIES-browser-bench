@@ -19,6 +19,8 @@ const (
 	maxAnswerBytes = 64 << 10
 	// maxBrowserLogBytes bounds the MCP server log kept as evidence.
 	maxBrowserLogBytes = 16 << 20
+	// maxNetworkTimingBytes bounds the browser's timing records.
+	maxNetworkTimingBytes = 64 << 20
 )
 
 // scoreRecord is evaluation/score.json.
@@ -68,7 +70,9 @@ func (b *Benchmark) Evaluate(ctx context.Context, task core.Task, sandbox runner
 	answerArtifact := filepath.Join(artifactDir, "answer.txt")
 	scoreArtifact := filepath.Join(artifactDir, "score.json")
 	logArtifact := filepath.Join(artifactDir, "browser-mcp.log")
-	for _, path := range []string{answerArtifact, scoreArtifact, logArtifact} {
+	timingArtifact := filepath.Join(artifactDir, "browser-network.jsonl")
+	summaryArtifact := filepath.Join(artifactDir, "network-summary.json")
+	for _, path := range []string{answerArtifact, scoreArtifact, logArtifact, timingArtifact, summaryArtifact} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return finish(fmt.Errorf("remove stale evaluator artifact %q: %w", path, err))
 		}
@@ -77,6 +81,13 @@ func (b *Benchmark) Evaluate(ctx context.Context, task core.Task, sandbox runner
 		evaluation.LogPaths = append(evaluation.LogPaths, logArtifact)
 	} else if !errors.Is(err, runner.ErrNotFound) {
 		return finish(fmt.Errorf("collect Playwright MCP log: %w", err))
+	}
+	if b.networkTiming {
+		paths, err := collectNetworkTiming(ctx, sandbox, timingArtifact, summaryArtifact)
+		if err != nil {
+			return finish(err)
+		}
+		evaluation.LogPaths = append(evaluation.LogPaths, paths...)
 	}
 
 	record := scoreRecord{TaskID: id, Gold: gold}
@@ -124,6 +135,34 @@ func (b *Benchmark) Evaluate(ctx context.Context, task core.Task, sandbox runner
 	}
 	evaluation.Duration = time.Since(started)
 	return evaluation, nil
+}
+
+// collectNetworkTiming keeps the browser's timing records and their summary.
+// A browser that never loaded a page leaves no records and no summary.
+func collectNetworkTiming(ctx context.Context, sandbox runner.Sandbox, records, summaryPath string) ([]string, error) {
+	switch err := download(ctx, sandbox, networkTimingFile, records, maxNetworkTimingBytes); {
+	case errors.Is(err, runner.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("collect browser network timing: %w", err)
+	}
+	file, err := os.Open(records)
+	if err != nil {
+		return nil, fmt.Errorf("read browser network timing: %w", err)
+	}
+	defer file.Close()
+	summary, _, err := ParseNetworkTiming(file)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode network summary: %w", err)
+	}
+	if err := os.WriteFile(summaryPath, append(encoded, '\n'), 0o600); err != nil {
+		return nil, fmt.Errorf("write network summary: %w", err)
+	}
+	return []string{records, summaryPath}, nil
 }
 
 // download prefers a bounded download when the sandbox offers one.

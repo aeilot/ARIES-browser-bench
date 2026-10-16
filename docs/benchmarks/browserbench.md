@@ -52,6 +52,44 @@ AssistantBench's `question_scorer` as vendored by
 `evaluation/score.json` records the prediction, the gold answer, the accuracy
 and any scorer error; `evaluation/browser-mcp.log` is the server's log.
 
+## Timing and resource evidence
+
+With `network_timing` on (the default), preparation installs a small script
+that Playwright MCP loads into every page (`--init-page`). It appends one JSON
+line per finished or failed request (DNS, connect, TLS, request and response
+offsets, status, sizes) and per page load (navigation timing) to
+`/tmp/aries-browser/network.jsonl`. Evaluation keeps it as
+`evaluation/browser-network.jsonl` and writes `evaluation/network-summary.json`:
+request counts, response bytes, `network_active_ms` (the union of request
+lifetimes), and, for each page load, the document's network time and the time
+after its last byte.
+
+To split a task's browser time between waiting on remote sites and local work,
+join those records with Hermes's spans:
+
+```sh
+go run ./scripts/browser-timing runs/<run-id>
+```
+
+For each task it reports the browser tool calls' total time, the part in which
+a request was on the network (`remote wait`), the rest (`local`: rendering,
+script execution, snapshots and the tool protocol's overhead), network
+activity between calls, and model time. All runtimes share the host clock, so
+the browser's and the harness's timestamps compare directly. The script reads
+Hermes's `telemetry/otel-spans.jsonl` and does not support OpenClaw.
+
+The recording itself costs a little: one extra CDP query per request for its
+sizes and one script evaluation per page load. Set
+`benchmark.browserbench.network_timing` to `false` to measure without it.
+
+`monitor/resources.jsonl` carries the optional Docker measurements described in
+[run results](../run-results.md#measurement-availability), including process
+count, shared memory, peak memory, network bytes and, on kernels with PSI,
+pressure stall totals. `benchmark.environment.shm_size_mb` sizes the sandbox's
+`/dev/shm`. Playwright launches Chromium with `--disable-dev-shm-usage`, so by
+default Chromium keeps its shared memory in `/tmp` and the setting matters
+little until that flag is removed.
+
 ## Caveats
 
 - The public internet changes. AssistantBench's answers were collected in 2024,
@@ -67,3 +105,6 @@ and any scorer error; `evaluation/browser-mcp.log` is the server's log.
   runtime overrides file replaces it.
 - Chromium runs without its own sandbox (the image's default); the container
   is the boundary.
+- The timing records and the server log are written in the sandbox, where the
+  agent's shell could alter them; they are evidence, not verifier input. The
+  recording script itself is owned by root.

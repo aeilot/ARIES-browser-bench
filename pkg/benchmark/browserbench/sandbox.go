@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +37,7 @@ func (b *Benchmark) PrepareSandbox(ctx context.Context, _ core.Task, sandbox run
 	if sandbox == nil {
 		return errors.New("browserbench preparation requires a live sandbox")
 	}
-	removed, err := sandbox.Exec(ctx, core.Command{Path: "/bin/rm", Args: []string{"-rf", "--", answerPath, browserDir}})
+	removed, err := sandbox.Exec(ctx, core.Command{Path: "/bin/rm", Args: []string{"-rf", "--", answerPath, browserDir, networkTimingScript}})
 	if err != nil {
 		return fmt.Errorf("remove answer path before harness: %w", err)
 	}
@@ -50,7 +52,43 @@ func (b *Benchmark) PrepareSandbox(ctx context.Context, _ core.Task, sandbox run
 	if probed.ExitCode != 0 {
 		return fmt.Errorf("confirm answer path absent before harness: exit code %d", probed.ExitCode)
 	}
+	if b.networkTiming {
+		if err := b.uploadNetworkTiming(ctx, sandbox); err != nil {
+			return err
+		}
+	}
 	return b.startMCP(ctx, sandbox)
+}
+
+// uploadNetworkTiming places network_timing.js where the server loads it.
+// The server runs as the image's unprivileged user, so the file must be
+// world-readable. Docker gives an upload the container user's ownership, so
+// the file is then handed to root: in sticky /tmp the agent's shell can
+// neither change nor replace it.
+func (b *Benchmark) uploadNetworkTiming(ctx context.Context, sandbox runner.Sandbox) error {
+	directory, err := os.MkdirTemp("", "aries-browserbench-")
+	if err != nil {
+		return fmt.Errorf("stage network timing script: %w", err)
+	}
+	defer os.RemoveAll(directory)
+	staged := filepath.Join(directory, filepath.Base(networkTimingScript))
+	if err := os.WriteFile(staged, networkTimingSource, 0o600); err != nil {
+		return fmt.Errorf("stage network timing script: %w", err)
+	}
+	if err := os.Chmod(staged, 0o644); err != nil {
+		return fmt.Errorf("stage network timing script: %w", err)
+	}
+	if err := sandbox.Upload(ctx, staged, networkTimingScript); err != nil {
+		return fmt.Errorf("upload network timing script: %w", err)
+	}
+	owned, err := sandbox.Exec(ctx, core.Command{Path: "/bin/chown", Args: []string{"0:0", "--", networkTimingScript}, User: "0:0"})
+	if err != nil {
+		return fmt.Errorf("protect network timing script: %w", err)
+	}
+	if owned.ExitCode != 0 {
+		return fmt.Errorf("protect network timing script: exit code %d: %s", owned.ExitCode, strings.TrimSpace(owned.Stderr))
+	}
+	return nil
 }
 
 // mcpCommand is the server's argv: headless Chromium without its own
@@ -65,6 +103,9 @@ func (b *Benchmark) mcpCommand() []string {
 	}
 	if len(b.blockedOrigins) > 0 {
 		command = append(command, "--blocked-origins", strings.Join(b.blockedOrigins, ";"))
+	}
+	if b.networkTiming {
+		command = append(command, "--init-page", networkTimingScript)
 	}
 	return command
 }

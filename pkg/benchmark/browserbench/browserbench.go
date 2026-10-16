@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	_ "embed"
+
 	"github.com/hyscale-lab/aries/pkg/core"
 	"github.com/hyscale-lab/aries/pkg/runner"
 )
@@ -49,7 +51,15 @@ const (
 	browserDir = "/tmp/aries-browser"
 	// mcpEntrypoint is Playwright MCP's CLI in its official image.
 	mcpEntrypoint = "/app/cli.js"
+	// networkTimingScript is where preparation places network_timing.js,
+	// outside browserDir so that the browser's output cannot replace it.
+	networkTimingScript = "/tmp/aries-network-timing.js"
+	// networkTimingFile is where that script writes its records.
+	networkTimingFile = browserDir + "/network.jsonl"
 )
+
+//go:embed network_timing.js
+var networkTimingSource []byte
 
 // taskPromptTemplate wraps each AssistantBench question. Upstream, a
 // BrowserGym agent gets the bare question, has only browser actions, and is
@@ -92,6 +102,9 @@ type Options struct {
 	MCPPort          int
 	MCPCallTimeout   int
 	BlockedOrigins   []string
+	// NetworkTiming records the browser's per-request and page-load timing
+	// in the sandbox (network_timing.js) for evaluation to summarize.
+	NetworkTiming bool
 }
 
 // Dataset pins one AssistantBench file by revision and SHA-256.
@@ -119,6 +132,7 @@ type Benchmark struct {
 	environment      core.Environment
 	mcpPort          int
 	blockedOrigins   []string
+	networkTiming    bool
 
 	mu      sync.RWMutex
 	logical map[string]string // execution ID -> AssistantBench ID
@@ -213,6 +227,7 @@ func New(options Options) (*Benchmark, error) {
 		environment:      environment,
 		mcpPort:          port,
 		blockedOrigins:   slices.Clone(options.BlockedOrigins),
+		networkTiming:    options.NetworkTiming,
 	}, nil
 }
 

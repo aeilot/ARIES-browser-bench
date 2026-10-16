@@ -154,6 +154,7 @@ type sandboxFake struct {
 	results  []core.CommandResult
 	files    map[string]string
 	limits   map[string]int64
+	uploads  map[string]string // destination -> content and mode
 }
 
 func (s *sandboxFake) Connectivity() core.HarnessConnectivity { return core.HarnessConnectivity{} }
@@ -167,8 +168,20 @@ func (s *sandboxFake) Exec(_ context.Context, command core.Command) (core.Comman
 	return core.CommandResult{}, nil
 }
 
-func (*sandboxFake) Upload(context.Context, string, string) error {
-	return errors.New("browserbench must not upload")
+func (s *sandboxFake) Upload(_ context.Context, source, destination string) error {
+	content, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if s.uploads == nil {
+		s.uploads = map[string]string{}
+	}
+	s.uploads[destination] = fmt.Sprintf("%v %s", info.Mode().Perm(), content)
+	return nil
 }
 
 func (s *sandboxFake) Download(_ context.Context, source, destination string) error {
@@ -201,7 +214,7 @@ func TestPrepareSandboxClearsAnswerThenStartsServer(t *testing.T) {
 	if len(sandbox.commands) != 4 {
 		t.Fatalf("commands = %#v", sandbox.commands)
 	}
-	if remove := sandbox.commands[0]; remove.Path != "/bin/rm" || !reflect.DeepEqual(remove.Args, []string{"-rf", "--", answerPath, browserDir}) {
+	if remove := sandbox.commands[0]; remove.Path != "/bin/rm" || !reflect.DeepEqual(remove.Args, []string{"-rf", "--", answerPath, browserDir, networkTimingScript}) {
 		t.Fatalf("remove = %#v", remove)
 	}
 	if probe := sandbox.commands[1]; probe.Path != "/bin/sh" || probe.Args[len(probe.Args)-1] != answerPath {
@@ -217,6 +230,33 @@ func TestPrepareSandboxClearsAnswerThenStartsServer(t *testing.T) {
 	}
 	if ready := sandbox.commands[3]; ready.Path != "/bin/bash" || ready.Args[len(ready.Args)-1] != "8931" {
 		t.Fatalf("readiness probe = %#v", ready)
+	}
+	if len(sandbox.uploads) != 0 {
+		t.Fatalf("uploads without network timing = %v", sandbox.uploads)
+	}
+}
+
+func TestPrepareSandboxInstallsNetworkTiming(t *testing.T) {
+	options := baseOptions(t)
+	options.NetworkTiming = true
+	benchmark, err := New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox := &sandboxFake{}
+	if err := benchmark.PrepareSandbox(context.Background(), core.Task{ID: numberTaskID}, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	uploaded := sandbox.uploads[networkTimingScript]
+	if !strings.HasPrefix(uploaded, "-rw-r--r-- ") || !strings.Contains(uploaded, "requestfinished") {
+		t.Fatalf("network timing upload = %.80q", uploaded)
+	}
+	if own := sandbox.commands[2]; own.Path != "/bin/chown" || own.User != "0:0" || own.Args[len(own.Args)-1] != networkTimingScript {
+		t.Fatalf("ownership command = %#v", own)
+	}
+	start := sandbox.commands[3].Args
+	if start[len(start)-2] != "--init-page" || start[len(start)-1] != networkTimingScript {
+		t.Fatalf("start = %#v", start)
 	}
 }
 
@@ -295,7 +335,49 @@ func TestEvaluateScoresAnswerAgainstGold(t *testing.T) {
 			if len(evaluation.LogPaths) != 3 {
 				t.Fatalf("log paths = %v", evaluation.LogPaths)
 			}
+			if _, err := os.Stat(filepath.Join(outputDir, c.taskID, "evaluation", "network-summary.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("summary without network timing: %v", err)
+			}
 		})
+	}
+}
+
+func TestEvaluateSummarizesNetworkTiming(t *testing.T) {
+	options := baseOptions(t)
+	options.NetworkTiming = true
+	benchmark, err := New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := benchmark.Tasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	records := `{"type":"request","page":1,"resource_type":"document","start_ms":1000,"end_ms":1300,"timing":{"response_end":250},"status":200,"sizes":{"response_headers":100,"response_body":900}}` + "\n"
+	sandbox := &sandboxFake{files: map[string]string{answerPath: "2", networkTimingFile: records}}
+	evaluation, err := benchmark.Evaluate(context.Background(), core.Task{ID: numberTaskID}, sandbox, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.limits[networkTimingFile] != maxNetworkTimingBytes {
+		t.Fatalf("download limits = %v", sandbox.limits)
+	}
+	data, err := os.ReadFile(filepath.Join(options.OutputDir, numberTaskID, "evaluation", "network-summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary NetworkSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Requests != 1 || summary.ResponseBytes != 1000 || summary.NetworkActiveMs != 250 || evaluation.Score != 1 {
+		t.Fatalf("summary = %+v, evaluation = %+v", summary, evaluation)
+	}
+
+	// No page loaded: no records, no summary, and no error.
+	benchmark2, _ := loadedBenchmark(t, numberTaskID)
+	benchmark2.networkTiming = true
+	if _, err := benchmark2.Evaluate(context.Background(), core.Task{ID: numberTaskID}, &sandboxFake{files: map[string]string{answerPath: "2"}}, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 
