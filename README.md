@@ -29,6 +29,9 @@ resource sampling apply unchanged.
 | The `benchmark.browserbench` profile block; the dataset pinned by revision and SHA-256 | [`pkg/config/config.go`](pkg/config/config.go), [`configs/versions.json`](configs/versions.json) |
 | A five-task Hermes + DeepSeek profile | [`profiles/hermes-browserbench-ab5-deepseek.json`](profiles/hermes-browserbench-ab5-deepseek.json) |
 | A Hermes fix: without web search, Hermes's own browser and search tools are disabled | [`pkg/harness/hermes/config.go`](pkg/harness/hermes/config.go) |
+| `environment.shm_size_mb`, which sizes the sandbox's `/dev/shm` | [`pkg/core/types.go`](pkg/core/types.go), [`pkg/deployment/docker/docker.go`](pkg/deployment/docker/docker.go) |
+| More resource metrics per runtime: process count, shared memory, peak memory, PSI pressure and network bytes | [`pkg/deployment/docker/cgroup.go`](pkg/deployment/docker/cgroup.go), [`docs/run-results.md`](docs/run-results.md#measurement-availability) |
+| Browser network timing recorded in the sandbox, and a tool that splits browser time into remote wait and local work | [`network_timing.js`](pkg/benchmark/browserbench/network_timing.js), [`timing.go`](pkg/benchmark/browserbench/timing.go), [`scripts/browser-timing/`](scripts/browser-timing/) |
 | Usage and implementation notes | [`docs/benchmarks/browserbench.md`](docs/benchmarks/browserbench.md), [`docs/implementation/benchmarks.md`](docs/implementation/benchmarks.md#browserbench) |
 
 ## Topology
@@ -111,6 +114,34 @@ For comparison, a shell-only task in the same environment (Terminal-Bench 2
 `fix-git`) peaked at 215 MiB of sandbox memory and used 13 s of sandbox CPU.
 With a browser, sandbox peak memory is 4–10 times higher.
 
+## Where the time goes
+
+Each task's `evaluation/browser-network.jsonl` holds the browser's request and
+page-load timing, recorded in the sandbox; `evaluation/network-summary.json`
+summarizes it. To join it with Hermes's tool and model spans:
+
+```bash
+go run ./scripts/browser-timing runs/<run-id>
+```
+
+A verification run of the Vanguard ETF task (same setup as above, plus
+`shm_size_mb: 256`, 2026-10-15) answered correctly in 104 s:
+
+| | Time |
+| --- | ---: |
+| Model calls (23) | 84.5 s |
+| Browser tool calls (20) | 17.2 s |
+| … waiting on remote sites | 11.1 s |
+| … local work: rendering, scripts, snapshots, tool protocol | 6.1 s |
+| Network activity between browser calls | 19.7 s |
+
+The browser made 3,569 requests (mostly scripts and stylesheets on finance
+sites) and received 26 MB. Pages kept loading after the tool calls returned,
+so network activity outside the calls exceeded the waiting within them. The
+sandbox peaked at 1.8 GB of memory and 180 processes and threads, with 18 MB of
+shared memory. PSI is not available in this VM's kernel, so `pressure` is
+unmeasured there.
+
 ## Issues found along the way
 
 - **Hermes's own browser bypasses the sandbox.** Hermes v2026.8.31 adds its
@@ -140,20 +171,25 @@ With a browser, sandbox peak memory is 4–10 times higher.
 - Only the 33 dev tasks publish answers; the 181 test answers are withheld.
 - Websites may block automated browsers; the adapter does not work around them.
 - Only Hermes has been checked. Whether OpenClaw's own tools also bypass the
-  sandbox has not been verified.
+  sandbox has not been verified, and `browser-timing` reads only Hermes's spans.
+- The timing records are written in the sandbox, where the agent's shell could
+  alter them; they are evidence, not verifier input.
 
 ## Next steps
 
-1. **`shm_size`.** Docker's default `/dev/shm` is 64 MB; `core.Environment`
-   and the Docker deployment should let a profile set it.
-2. **More resource metrics**: pids, shmem, `memory.peak`, PSI pressure, and
-   network bytes.
-3. **Network timing evidence**, to separate waiting on remote sites from local
-   rendering and JavaScript execution.
-4. **Answers left only in the chat reply**: raise the turn limit, or also
+Done since the first results: `shm_size_mb`, the extra resource metrics, and
+browser network timing (see above).
+
+1. **Answers left only in the chat reply**: raise the turn limit, or also
    record the harness's final reply.
-5. **More tasks and dimensions**: a BrowseComp subset; sweeps over
-   concurrency, browser build and resource limits.
+2. **Experiment sweeps**: concurrency, resource limits, `shm_size_mb` (with
+   Chromium's `--disable-dev-shm-usage` removed, since Playwright otherwise keeps
+   shared memory in `/tmp`), and browser build.
+3. **A Linux host with PSI**, so that pressure stall totals are measured, and
+   for numbers that do not depend on a laptop VM.
+4. **More tasks**: a BrowseComp subset.
+5. **OpenClaw**: check its own tools for sandbox bypasses, and read its
+   telemetry in `browser-timing`.
 
 ## License
 
