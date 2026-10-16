@@ -97,9 +97,27 @@ tasks. Its samples and index are under
 `infrastructure/bridge/monitor/`, with component `bridge`, `scope: "run"`, and
 `run_id`; they contain no `task_id`. Per-task monitor files contain only that
 task's harness, sandbox, evaluation sandbox, and configured GPU observations,
-with `scope: "task"`, `run_id`, and `task_id`. Index schema version 4 distinguishes
-the two scopes. CPU percentages use differences between cumulative CPU usage
+with `scope: "task"`, `run_id`, and `task_id`. Index schema version 5 distinguishes
+the two scopes and allows the optional fields below. CPU percentages use differences between cumulative CPU usage
 and observation times; the first sample for each runtime is a zero baseline.
+
+Docker samples may also carry optional fields, omitted when not measured (an
+omitted field is not a zero):
+
+| Field | Meaning | Source |
+| --- | --- | --- |
+| `pids` | Current processes and threads | Docker stats |
+| `memory_shmem_bytes` | Shared memory, including `/dev/shm`, charged to the runtime | Docker stats (`memory.stat`) |
+| `network_rx_bytes`, `network_tx_bytes` | Cumulative bytes over all interfaces | Docker stats |
+| `memory_peak_bytes` | Highest memory usage since the runtime started | cgroup v2 `memory.peak` |
+| `pressure.{cpu,memory,io}` | Cumulative pressure stall microseconds, `some_total_us` and `full_total_us` | cgroup v2 `*.pressure` |
+
+The cgroup fields are read through the runtime's init process in the host's
+`/proc` and `/sys/fs/cgroup`, so they need ARIES and the daemon on one Linux
+host (as the local-socket deployment already requires), cgroup v2, and, for
+`pressure`, a kernel with PSI enabled. Missing files leave them unmeasured;
+other read or parse errors fail the observation. The counters are cumulative;
+derive rates from differences between samples.
 Shared costs are not duplicated or apportioned across tasks. See the
 [measurement schema limits](design.md#measurement-meaning-and-current-gaps) for
 first CPU baselines and GPU-only fields.

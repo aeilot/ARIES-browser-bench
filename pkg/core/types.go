@@ -83,6 +83,34 @@ type ResourceReading struct {
 	MemoryUsageBytes    uint64
 	MemoryLimitBytes    uint64
 	GPU                 *GPUResourceReading
+	// The measurements below are optional: nil means the source did not
+	// measure the value, which differs from a measured zero.
+	// Pids is the runtime's current process and thread count.
+	Pids *uint64
+	// MemoryPeakBytes is the highest memory usage since the runtime started.
+	MemoryPeakBytes *uint64
+	// MemoryShmemBytes is shared memory (tmpfs, /dev/shm) charged to the runtime.
+	MemoryShmemBytes *uint64
+	// NetworkRxBytes and NetworkTxBytes are cumulative over all interfaces.
+	NetworkRxBytes *uint64
+	NetworkTxBytes *uint64
+	// Pressure holds cumulative pressure stall totals, when the kernel has PSI.
+	Pressure *PressureReading
+}
+
+// PressureReading is Linux pressure stall information (PSI) for one runtime:
+// cumulative microseconds in which some, or all, of its tasks stalled.
+type PressureReading struct {
+	CPU    *PressureTotals `json:"cpu,omitempty"`
+	Memory *PressureTotals `json:"memory,omitempty"`
+	IO     *PressureTotals `json:"io,omitempty"`
+}
+
+// PressureTotals is one resource's PSI. Full is nil when the kernel reports
+// no "full" line for the resource.
+type PressureTotals struct {
+	SomeMicroseconds uint64  `json:"some_total_us"`
+	FullMicroseconds *uint64 `json:"full_total_us,omitempty"`
 }
 
 // GPUResourceReading contains one device-level NVIDIA observation.

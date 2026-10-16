@@ -341,7 +341,9 @@ func (recorder *Recorder) sample(ctx context.Context, second uint64, sampleTime 
 			Component: reading.Component, RuntimeID: reading.RuntimeID, RuntimeName: reading.RuntimeName,
 			CPUUsageNanoseconds: reading.CPUUsageNanoseconds, CPUPercent: cpuPercent,
 			MemoryUsageBytes: reading.MemoryUsageBytes, MemoryLimitBytes: reading.MemoryLimitBytes,
-			GPU: reading.GPU,
+			GPU: reading.GPU, Pids: reading.Pids, MemoryPeakBytes: reading.MemoryPeakBytes,
+			MemoryShmemBytes: reading.MemoryShmemBytes, NetworkRxBytes: reading.NetworkRxBytes,
+			NetworkTxBytes: reading.NetworkTxBytes, Pressure: reading.Pressure,
 		}
 		if err := artifact.appendSample(sample, recorder.maxSamplesPerTask, recorder.maxFileBytes); err != nil {
 			return fmt.Errorf("record monitor sample for task %s: %w", reading.TaskID, err)
@@ -373,6 +375,11 @@ func (recorder *Recorder) validateReading(reading core.ResourceReading) error {
 	}
 	if reading.MemoryUsageBytes > maxMemoryBytes || reading.MemoryLimitBytes > maxMemoryBytes {
 		return errors.New("monitor memory measurement exceeds the bound")
+	}
+	for _, value := range []*uint64{reading.MemoryPeakBytes, reading.MemoryShmemBytes} {
+		if value != nil && *value > maxMemoryBytes {
+			return errors.New("monitor memory measurement exceeds the bound")
+		}
 	}
 	if reading.GPU != nil {
 		if reading.GPU.Index < 0 || reading.GPU.UUID != reading.RuntimeID {

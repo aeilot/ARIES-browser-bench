@@ -38,10 +38,11 @@ type resourceAPI interface {
 // Engine SDK. Rate calculation and artifact writing stay deployment-neutral in
 // pkg/monitor.
 type DockerResourceSource struct {
-	scope string
-	api   resourceAPI
-	runID string
-	tasks map[string]struct{}
+	scope   string
+	api     resourceAPI
+	runID   string
+	tasks   map[string]struct{}
+	cgroups cgroupReader
 }
 
 type resourceRuntime struct {
@@ -49,6 +50,7 @@ type resourceRuntime struct {
 	name      string
 	taskID    string
 	component string
+	pid       int
 }
 
 func NewResourceSource(options ResourceOptions) (*DockerResourceSource, error) {
@@ -92,7 +94,7 @@ func NewResourceSource(options ResourceOptions) (*DockerResourceSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Docker resource client: %w", err)
 	}
-	return &DockerResourceSource{api: api, runID: options.RunID, tasks: tasks, scope: options.Scope}, nil
+	return &DockerResourceSource{api: api, runID: options.RunID, tasks: tasks, scope: options.Scope, cgroups: hostCgroups}, nil
 }
 
 func (source *DockerResourceSource) Sample(ctx context.Context) ([]core.ResourceReading, error) {
@@ -167,7 +169,11 @@ func (source *DockerResourceSource) discover(ctx context.Context) ([]resourceRun
 			return nil, fmt.Errorf("validate Docker resource runtime %s: %w", summary.ID, err)
 		}
 		seen[summary.ID] = struct{}{}
-		runtimes = append(runtimes, resourceRuntime{id: summary.ID, name: name, taskID: taskID, component: component})
+		pid := 0
+		if state := inspection.Container.State; state != nil {
+			pid = state.Pid
+		}
+		runtimes = append(runtimes, resourceRuntime{id: summary.ID, name: name, taskID: taskID, component: component, pid: pid})
 	}
 	sort.Slice(runtimes, func(i, j int) bool {
 		if runtimes[i].taskID != runtimes[j].taskID {
@@ -214,11 +220,36 @@ func (source *DockerResourceSource) read(ctx context.Context, runtime resourceRu
 	if document.MemoryStats.Usage == 0 && document.MemoryStats.Limit == 0 {
 		return core.ResourceReading{}, errResourceRuntimeGone
 	}
-	return core.ResourceReading{
+	reading := core.ResourceReading{
 		Scope: source.scope, RunID: source.runID, TaskID: runtime.taskID, Component: runtime.component, RuntimeID: runtime.id, RuntimeName: runtime.name,
 		ObservedAt: document.Read, CPUUsageNanoseconds: document.CPUStats.CPUUsage.TotalUsage,
 		MemoryUsageBytes: document.MemoryStats.Usage, MemoryLimitBytes: document.MemoryStats.Limit,
-	}, nil
+	}
+	addStatsExtensions(&reading, document)
+	if err := source.cgroups.read(runtime.pid, runtime.id, &reading); err != nil {
+		return core.ResourceReading{}, fmt.Errorf("read cgroup resources for %s: %w", runtime.id, err)
+	}
+	return reading, nil
+}
+
+// addStatsExtensions copies the optional measurements the stats document
+// carries. A running container always has a process, so a zero PID count
+// means the daemon did not report one.
+func addStatsExtensions(reading *core.ResourceReading, document containertypes.StatsResponse) {
+	if pids := document.PidsStats.Current; pids > 0 {
+		reading.Pids = &pids
+	}
+	if shmem, ok := document.MemoryStats.Stats["shmem"]; ok {
+		reading.MemoryShmemBytes = &shmem
+	}
+	if document.Networks != nil {
+		var received, sent uint64
+		for _, network := range document.Networks {
+			received += network.RxBytes
+			sent += network.TxBytes
+		}
+		reading.NetworkRxBytes, reading.NetworkTxBytes = &received, &sent
+	}
 }
 
 func resourceComponent(component string) (string, bool) {

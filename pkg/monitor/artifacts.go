@@ -19,7 +19,7 @@ import (
 const (
 	artifactDirectoryMode = 0o700
 	artifactFileMode      = 0o600
-	indexSchemaVersion    = 4
+	indexSchemaVersion    = 5
 	maxCoverageEntries    = 32
 )
 
@@ -39,6 +39,13 @@ type ResourceSample struct {
 	MemoryUsageBytes    uint64                   `json:"memory_usage_bytes"`
 	MemoryLimitBytes    uint64                   `json:"memory_limit_bytes"`
 	GPU                 *core.GPUResourceReading `json:"gpu,omitempty"`
+	// Optional measurements are omitted when the source did not take them.
+	Pids             *uint64               `json:"pids,omitempty"`
+	MemoryPeakBytes  *uint64               `json:"memory_peak_bytes,omitempty"`
+	MemoryShmemBytes *uint64               `json:"memory_shmem_bytes,omitempty"`
+	NetworkRxBytes   *uint64               `json:"network_rx_bytes,omitempty"`
+	NetworkTxBytes   *uint64               `json:"network_tx_bytes,omitempty"`
+	Pressure         *core.PressureReading `json:"pressure,omitempty"`
 }
 
 // Index is the bounded summary written beside resource samples for one scope.

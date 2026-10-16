@@ -54,7 +54,7 @@ func TestRunRecorderMeasuresBridgeOnceWithoutTaskIdentity(t *testing.T) {
 		}
 	}
 	index := readIndexStrict(t, report.LogPaths[1])
-	if index.SchemaVersion != 4 || index.Scope != "run" || index.RunID != "run-1" || index.TaskID != "" || len(index.Components) != 1 || index.Components[0].SampleCount != 2 {
+	if index.SchemaVersion != 5 || index.Scope != "run" || index.RunID != "run-1" || index.TaskID != "" || len(index.Components) != 1 || index.Components[0].SampleCount != 2 {
 		t.Fatalf("run index = %#v", index)
 	}
 	for _, path := range report.LogPaths {

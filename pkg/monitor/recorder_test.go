@@ -115,7 +115,7 @@ func TestRecorderDerivesCPUAndWritesPortablePrivateArtifacts(t *testing.T) {
 		t.Fatalf("positive CPU components = %#v", seenPositive)
 	}
 	index := readIndexStrict(t, report.LogPaths[1])
-	if index.SchemaVersion != 4 || index.SampleCount != uint64(len(samples)) || len(index.Components) != 2 {
+	if index.SchemaVersion != 5 || index.SampleCount != uint64(len(samples)) || len(index.Components) != 2 {
 		t.Fatalf("index = %+v", index)
 	}
 	for _, path := range append([]string{filepath.Dir(report.LogPaths[0])}, report.LogPaths...) {
@@ -166,6 +166,58 @@ func TestRecorderWritesGPUResourceMetrics(t *testing.T) {
 	if gpu.Index != 0 || gpu.UUID != "GPU-abc" || gpu.UtilizationPercent == nil || *gpu.UtilizationPercent != utilization ||
 		gpu.MemoryUsageBytes != 12<<30 || gpu.MemoryTotalBytes != 94<<30 || gpu.PowerWatts == nil || *gpu.PowerWatts != power {
 		t.Fatalf("gpu = %#v", gpu)
+	}
+}
+
+func TestRecorderWritesOptionalMeasurementsOnlyWhenTaken(t *testing.T) {
+	observed := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	pids, peak, shmem, received, sent := uint64(157), uint64(2<<30), uint64(0), uint64(1005), uint64(11)
+	full := uint64(7)
+	measured := testReading("sandbox", "sandbox-1", observed, 10)
+	measured.Pids, measured.MemoryPeakBytes, measured.MemoryShmemBytes = &pids, &peak, &shmem
+	measured.NetworkRxBytes, measured.NetworkTxBytes = &received, &sent
+	measured.Pressure = &core.PressureReading{CPU: &core.PressureTotals{SomeMicroseconds: 30, FullMicroseconds: &full}}
+	source := &fakeSource{sample: func(context.Context, int) ([]core.ResourceReading, error) {
+		return []core.ResourceReading{testReading("harness", "harness-1", observed, 20), measured}, nil
+	}}
+	recorder := newTestRecorder(t, source, filepath.Join(t.TempDir(), "run"), time.Hour)
+	if err := recorder.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := recorder.Stop(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := reports["fix-git"].LogPaths[0]
+	samples := readSamplesStrict(t, path)
+	if len(samples) != 2 {
+		t.Fatalf("samples = %#v", samples)
+	}
+	harness, sandbox := samples[0], samples[1]
+	if *sandbox.Pids != 157 || *sandbox.MemoryPeakBytes != 2<<30 || *sandbox.MemoryShmemBytes != 0 ||
+		*sandbox.NetworkRxBytes != 1005 || *sandbox.NetworkTxBytes != 11 || sandbox.Pressure.CPU.SomeMicroseconds != 30 || *sandbox.Pressure.CPU.FullMicroseconds != 7 {
+		t.Fatalf("sandbox sample = %#v", sandbox)
+	}
+	if harness.Pids != nil || harness.MemoryPeakBytes != nil || harness.Pressure != nil {
+		t.Fatalf("harness sample invents measurements: %#v", harness)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.SplitN(string(content), "\n", 2)[0]
+	if strings.Contains(first, "pids") || strings.Contains(first, "pressure") || !strings.Contains(string(content), `"memory_shmem_bytes":0`) {
+		t.Fatalf("unmeasured values must be omitted and measured zeros kept:\n%s", content)
+	}
+}
+
+func TestRecorderRejectsOversizedOptionalMemory(t *testing.T) {
+	recorder := newTestRecorder(t, &fakeSource{}, filepath.Join(t.TempDir(), "run"), time.Hour)
+	reading := testReading("sandbox", "sandbox-1", time.Now(), 1)
+	oversized := maxMemoryBytes + 1
+	reading.MemoryPeakBytes = &oversized
+	if err := recorder.validateReading(reading); err == nil {
+		t.Fatal("oversized memory peak accepted")
 	}
 }
 

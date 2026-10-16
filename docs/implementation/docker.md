@@ -80,7 +80,12 @@ The bridge resource source is selected from `bridge.deployment`, independently o
 the sandbox source. Run-scoped discovery selects the shared bridge by run ownership
 without inventing a task ID. Task sources select their harness and live/evaluation
 sandboxes and exclude the bridge. Confirmed runtime disappearance during sampling
-is skipped; genuine measurement failures remain visible. The common recorder
+is skipped; genuine measurement failures remain visible. Besides CPU and
+memory, a sample carries the stats document's process count, shared memory
+and network bytes, and, from the runtime's cgroup v2 directory, `memory.peak`
+and PSI totals. The directory is found through the init process's
+`/proc/<pid>/cgroup` and accepted only when its path names the runtime's ID,
+so a reused PID cannot attribute another cgroup. The common recorder
 calculates rates and writes [resource evidence](../run-results.md).
 
 [Provider tests](../../pkg/deployment/docker/docker_test.go),
