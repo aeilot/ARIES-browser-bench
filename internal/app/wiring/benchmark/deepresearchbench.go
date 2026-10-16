@@ -78,6 +78,7 @@ func environmentFromConfig(cfg *config.BenchmarkEnvironment) core.Environment {
 		CPU:       cfg.CPU,
 		MemoryMB:  cfg.MemoryMB,
 		StorageMB: cfg.StorageMB,
+		ShmSizeMB: cfg.ShmSizeMB,
 		Env:       cfg.Env,
 	}
 }

@@ -116,7 +116,7 @@ func (f *fakeDeployment) DownloadArchive(context.Context, string, string) (io.Re
 	return io.NopCloser(bytes.NewReader(f.archive)), f.info, f.downloadErr
 }
 func testRequest() core.SandboxRequest {
-	return core.SandboxRequest{RunID: "run", TaskID: "task", Environment: core.Environment{Image: "busybox:1.37.0", Workdir: "/work", ExecUser: "1000:1000", CPU: 0.5, MemoryMB: 32, StorageMB: 64, GPUs: 1}}
+	return core.SandboxRequest{RunID: "run", TaskID: "task", Environment: core.Environment{Image: "busybox:1.37.0", Workdir: "/work", ExecUser: "1000:1000", CPU: 0.5, MemoryMB: 32, StorageMB: 64, ShmSizeMB: 512, GPUs: 1}}
 }
 func testManager(t *testing.T, f *fakeDeployment) *Manager {
 	t.Helper()
@@ -148,7 +148,7 @@ func TestSharedDeploymentReceivesSandboxPolicy(t *testing.T) {
 	}
 	s := live.(*Sandbox)
 	r := f.request
-	if r.Workdir != "/work" || !r.Init || !r.NoNewPrivileges || !r.AllowImageVolumes || r.StorageMB != 64 || r.GPUs != 1 || *r.CPU != 0.5 || *r.MemoryMB != 32 {
+	if r.Workdir != "/work" || !r.Init || !r.NoNewPrivileges || !r.AllowImageVolumes || r.StorageMB != 64 || r.ShmSizeMB != 512 || r.GPUs != 1 || *r.CPU != 0.5 || *r.MemoryMB != 32 {
 		t.Fatalf("lost policy: %+v", r)
 	}
 	if !reflect.DeepEqual(r.Entrypoint, []string{"/bin/sleep"}) || !reflect.DeepEqual(r.Args, []string{"infinity"}) || len(r.NetworkAliases) != 0 {

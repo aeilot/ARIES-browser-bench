@@ -204,7 +204,7 @@ func (m *Manager) Start(ctx context.Context, request core.SandboxRequest) (runne
 		Entrypoint: []string{"/bin/sleep"}, Args: []string{"infinity"},
 		Labels:    ownershipLabels(request, "task-container"),
 		Placement: s.connectivity.Placement,
-		StorageMB: env.StorageMB, GPUs: env.GPUs,
+		StorageMB: env.StorageMB, ShmSizeMB: env.ShmSizeMB, GPUs: env.GPUs,
 		Init: true, NoNewPrivileges: env.ExecUser != "", AllowImageVolumes: true,
 	}
 	if env.CPU > 0 {
@@ -608,6 +608,9 @@ func validateEnvironment(environment core.Environment) error {
 	}
 	if environment.MemoryMB < 0 || int64(environment.MemoryMB) > math.MaxInt64>>20 || environment.StorageMB < 0 || environment.GPUs < 0 {
 		return errors.New("sandbox memory, storage, and GPU counts must be nonnegative")
+	}
+	if environment.ShmSizeMB < 0 || int64(environment.ShmSizeMB) > math.MaxInt64>>20 {
+		return errors.New("sandbox shared memory size must be nonnegative and fit in bytes")
 	}
 	for key, value := range environment.Env {
 		if !validEnvName(key) || strings.ContainsRune(value, 0) {

@@ -329,6 +329,21 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSharedMemorySizeDefaultsAndBounds(t *testing.T) {
+	request := deploymentRequest()
+	manager := &Manager{client: newFakeDocker()}
+	if _, err := manager.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if size := manager.client.(*fakeDocker).created.HostConfig.ShmSize; size != 0 {
+		t.Fatalf("default shm size = %d, want the runtime default", size)
+	}
+	request.ShmSizeMB = -1
+	if _, err := manager.Create(context.Background(), request); err == nil {
+		t.Fatal("negative shared memory size accepted")
+	}
+}
+
 func TestSandboxConfigurationUsesSharedDeployment(t *testing.T) {
 	fake := newFakeDocker()
 	manager := &Manager{client: fake}
@@ -337,6 +352,7 @@ func TestSandboxConfigurationUsesSharedDeployment(t *testing.T) {
 	request.Init = true
 	request.NoNewPrivileges = true
 	request.StorageMB = 128
+	request.ShmSizeMB = 1024
 	request.GPUs = 2
 	request.NetworkAliases = []string{"task-sandbox"}
 	id, err := manager.Create(context.Background(), request)
@@ -347,7 +363,7 @@ func TestSandboxConfigurationUsesSharedDeployment(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := fake.created.HostConfig
-	if host.Init == nil || !*host.Init || !noNewPrivilegesEnabled(host.SecurityOpt) || host.StorageOpt["size"] != "128m" || len(host.DeviceRequests) != 1 || host.DeviceRequests[0].Count != 2 {
+	if host.Init == nil || !*host.Init || !noNewPrivilegesEnabled(host.SecurityOpt) || host.StorageOpt["size"] != "128m" || host.ShmSize != 1<<30 || len(host.DeviceRequests) != 1 || host.DeviceRequests[0].Count != 2 {
 		t.Fatalf("host configuration=%+v", host)
 	}
 	if !slices.Equal(fake.created.NetworkingConfig.EndpointsConfig[request.Placement.AttachmentID].Aliases, request.NetworkAliases) {

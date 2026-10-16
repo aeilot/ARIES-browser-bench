@@ -117,6 +117,9 @@ func resources(request deployment.Request) (container.Resources, error) {
 	if request.GPUs < 0 || request.StorageMB < 0 {
 		return result, errors.New("deployment GPU and storage bounds must be nonnegative")
 	}
+	if request.ShmSizeMB < 0 || int64(request.ShmSizeMB) > math.MaxInt64>>20 {
+		return result, fmt.Errorf("deployment shared memory must be nonnegative and no greater than %d MiB", int64(math.MaxInt64)>>20)
+	}
 	if request.GPUs > 0 {
 		result.DeviceRequests = []container.DeviceRequest{{Driver: "nvidia", Count: request.GPUs, Capabilities: [][]string{{"gpu"}}}}
 	}
@@ -147,6 +150,9 @@ func (manager *Manager) Create(ctx context.Context, request deployment.Request) 
 	}
 	if request.StorageMB > 0 {
 		host.StorageOpt = map[string]string{"size": fmt.Sprintf("%dm", request.StorageMB)}
+	}
+	if request.ShmSizeMB > 0 {
+		host.ShmSize = int64(request.ShmSizeMB) << 20
 	}
 	var networking *network.NetworkingConfig
 	if len(request.NetworkAliases) > 0 {

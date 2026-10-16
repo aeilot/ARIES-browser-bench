@@ -58,9 +58,11 @@ type Request struct {
 	InternalPort int
 	// Mounts grants access only to the host paths explicitly supplied by wiring.
 	// The default grants no host filesystem access.
-	Mounts          []Mount
-	Workdir         string
-	StorageMB       int
+	Mounts    []Mount
+	Workdir   string
+	StorageMB int
+	// ShmSizeMB sizes the runtime's /dev/shm; zero keeps the provider default.
+	ShmSizeMB       int
 	GPUs            int
 	Init            bool
 	NoNewPrivileges bool

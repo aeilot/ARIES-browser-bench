@@ -19,11 +19,14 @@ type Task struct {
 
 // Environment describes the task sandbox requested by a benchmark.
 type Environment struct {
-	Image        string            `json:"image"`
-	Workdir      string            `json:"workdir"`
-	CPU          float64           `json:"cpu,omitempty"`
-	MemoryMB     int               `json:"memory_mb,omitempty"`
-	StorageMB    int               `json:"storage_mb,omitempty"`
+	Image     string  `json:"image"`
+	Workdir   string  `json:"workdir"`
+	CPU       float64 `json:"cpu,omitempty"`
+	MemoryMB  int     `json:"memory_mb,omitempty"`
+	StorageMB int     `json:"storage_mb,omitempty"`
+	// ShmSizeMB sizes /dev/shm; zero keeps the runtime's default (64 MiB for
+	// Docker), which browsers and other shared-memory users can exhaust.
+	ShmSizeMB    int               `json:"shm_size_mb,omitempty"`
 	GPUs         int               `json:"gpus,omitempty"`
 	AllowNetwork bool              `json:"allow_network"`
 	Env          map[string]string `json:"env,omitempty"`

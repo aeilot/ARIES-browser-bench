@@ -203,6 +203,7 @@ type BenchmarkEnvironment struct {
 	CPU       float64           `json:"cpu,omitempty"`
 	MemoryMB  int               `json:"memory_mb,omitempty"`
 	StorageMB int               `json:"storage_mb,omitempty"`
+	ShmSizeMB int               `json:"shm_size_mb,omitempty"`
 	Env       map[string]string `json:"env,omitempty"`
 }
 

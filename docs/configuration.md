@@ -728,6 +728,9 @@ these guides:
 
 - Terminal-Bench 2 uses pinned task metadata for images and verifier budgets;
   see [overrides](#resource-and-timeout-overrides).
+- A benchmark `environment` block (Deep Research Bench, Toolathlon and
+  browserbench) may set `shm_size_mb` to size the sandbox's `/dev/shm`;
+  omitted or zero keeps Docker's 64 MiB default, which browsers can exhaust.
 - [Deep Research Bench](benchmarks/deep-research-bench.md) requires an environment
   image with its research services. An omitted `judge` reuses the harness model identity;
   optional `fact` configures citation checking.
