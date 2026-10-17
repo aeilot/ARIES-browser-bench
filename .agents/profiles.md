@@ -13,6 +13,8 @@ Use `configs/versions.json` for pins; do not duplicate the field inventory here.
   share model fields; preserve independent evaluation defaults and validation.
 - Match model IDs to the served catalog. Keep credential values out of profiles,
   metadata, logs, and results; use configured environment-variable references.
+  Keep profiler comparison snapshots allowlisted, independent of full profile
+  serialization; see [snapshot contract](../docs/configuration.md#comparison-snapshot).
 - Preserve [DeepSeek credential-file validation and fallback](../docs/configuration.md#external-deepseek).
 - Remove model credentials from managed SGLang's child environment. Use HTTPS for
   remote/credentialed endpoints; local HTTP uses a non-secret placeholder. URL

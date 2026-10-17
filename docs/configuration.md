@@ -32,6 +32,26 @@ profiles: benchmark roots, output paths, and arrival trace paths use the working
 directory. Profiles reject unknown fields and trailing JSON; there is no merge
 or inheritance layer. Never put credential values in profile JSON.
 
+## Comparison snapshot
+
+After preparation, each new run writes a private `run-profile.json` for profiler
+comparisons. Its allowlist contains benchmark and harness type, model ID, model
+runtime backend as provider, concurrency, and explicitly supplied resource
+and model request settings. `harness_cpu_limit` and `harness_memory_limit_mb`
+record harness overrides independently from `sandbox_cpu_limit` and
+`sandbox_memory_limit_mb`. Explicit zero means unlimited; an omitted dimension
+retains its unknown/task-default meaning. The snapshot does not claim resolved
+benchmark resource defaults or effective resources for every task. Explicit
+`temperature`, `max_tokens`, `context_length`, and `reasoning_effort` preserve
+model request settings; omitted values do not imply provider defaults.
+
+The snapshot excludes endpoint URLs, credential values and variable names,
+filesystem paths, task inputs, native harness configuration, and benchmark
+account settings. It is observational metadata, not a runnable replacement for
+the source profile. Snapshot fields do not extend the accepted profile schema.
+See [profiler evidence](run-results.md#profiler-evidence) for phase and queue
+measurement semantics.
+
 ## Resource and timeout overrides
 
 The five-task profile additionally references

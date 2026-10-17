@@ -4,6 +4,34 @@ Use this guide after the [quick start](quick-start.md) or a run configured with
 the [configuration reference](configuration.md). Artifacts are private and may
 contain task or model content.
 
+## Profiler evidence
+
+`aries.log` includes structured `task phase` events keyed by the execution
+occurrence's `task_id` and a unique `phase_id`. Each attempted lifecycle phase
+has an `event: "start"` and `event: "end"` pair. Each includes `depends_on`,
+the previous phase ID completed by this task (empty for its first phase). This
+records lifecycle control flow explicitly, without connecting harness spans or
+inferring causality from timestamp proximity. End events include `status` and
+`duration_ms` measured with Go's monotonic clock. Phases cover sandbox startup,
+preparation, bridge startup, harness startup, execution, isolation confirmation,
+evaluation, and cleanup. These observations preserve the existing lifecycle;
+phase events contain no instruction, model response, raw error or credential.
+Task completion and independent outcomes remain authoritative in the result.
+An interrupted process can leave an unmatched start, which means incomplete
+observation rather than a measured zero. Older runs lack phase boundaries.
+
+Application-scheduled task results include `scheduled_at`, captured when admission
+is attempted before waiting for capacity, and `started_at`, captured when Runner
+actually begins the task. Their difference includes capacity and setup wait.
+For arrival schedules, `scheduled_at` is the actual admission attempt, not the
+requested trace offset; compare the original arrival trace separately. Runs
+invoked directly through Runner have no application admission timestamp.
+
+`run-profile.json` is an allowlisted comparison snapshot described in
+[configuration](configuration.md#comparison-snapshot). It is available before
+tasks start; `run-result.json` is finalized after cleanup. Consumers can follow
+phase and resource evidence while a run is active without inventing task outcomes.
+
 ## Inspect a run
 
 For the one-task profile:

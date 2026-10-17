@@ -82,6 +82,7 @@ func runProfile(ctx context.Context, name, runID string, taskIDs []string, concu
 	var wg sync.WaitGroup
 	var index uint64
 	admit := func(logicalID string) bool {
+		scheduledAt := time.Now()
 		if !deadlineAt.IsZero() && !time.Now().Before(deadlineAt) {
 			return false
 		}
@@ -109,6 +110,11 @@ func runProfile(ctx context.Context, name, runID string, taskIDs []string, concu
 			defer wg.Done()
 			defer func() { <-capacity }()
 			slot.result, slot.err = run(ctx, occurrence)
+			for i := range slot.result.Tasks {
+				if slot.result.Tasks[i].TaskID == occurrence.executionID {
+					slot.result.Tasks[i].ScheduledAt = scheduledAt
+				}
+			}
 		}()
 		return true
 	}
