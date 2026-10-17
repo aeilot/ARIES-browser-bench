@@ -32,7 +32,10 @@
   OpenClaw's forwarding client lives in `pkg/bridge/ssh/openclaw/client` and must
   not import server grammar.
 - Use explicit dependencies, concrete helpers, `context.Context` for external
-  work, and Logrus lifecycle logging. Add dependencies only when existing code
+  work, and Logrus lifecycle logging. Keep phase telemetry observational and
+  preserve occurrence identity and measured boundaries; see
+  [profiler evidence](../docs/run-results.md#profiler-evidence).
+  Add dependencies only when existing code
   and the standard library are insufficient.
 
 ## Task lifecycle

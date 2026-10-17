@@ -284,9 +284,10 @@ type TaskResult struct {
 	// Error joins every failure of the task, including sandbox preparation
 	// failures that leave the harness not started.
 	Error string `json:"error,omitempty"`
-	// StartedAt is when the runner began the task: with an arrival schedule
-	// it is the realised start, which an analysis sets against the offset the
-	// schedule asked for.
+	// ScheduledAt records application admission intent, before waiting for capacity.
+	ScheduledAt time.Time `json:"scheduled_at,omitzero"`
+	// StartedAt is when Runner actually began the task; compare an arrival
+	// trace separately for the requested scheduling offset.
 	StartedAt time.Time     `json:"started_at,omitempty"`
 	Duration  time.Duration `json:"duration"`
 }

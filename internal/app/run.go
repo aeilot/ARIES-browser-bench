@@ -122,6 +122,9 @@ func Run(ctx context.Context, profilePath string, stdout io.Writer, dependencies
 	if err := createRunOutputRoot(outputRoot); err != nil {
 		return fmt.Errorf("create private run output root: %w", err)
 	}
+	if err := persistProfileSnapshot(outputRoot, cfg); err != nil {
+		return err
+	}
 	detachRunLog, err := attachRunLog(logger, outputRoot)
 	if err != nil {
 		return err
