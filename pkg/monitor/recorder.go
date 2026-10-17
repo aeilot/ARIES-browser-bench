@@ -344,6 +344,7 @@ func (recorder *Recorder) sample(ctx context.Context, second uint64, sampleTime 
 			GPU: reading.GPU, Pids: reading.Pids, MemoryPeakBytes: reading.MemoryPeakBytes,
 			MemoryShmemBytes: reading.MemoryShmemBytes, NetworkRxBytes: reading.NetworkRxBytes,
 			NetworkTxBytes: reading.NetworkTxBytes, Pressure: reading.Pressure,
+			CPUThrottling: reading.CPUThrottling,
 		}
 		if err := artifact.appendSample(sample, recorder.maxSamplesPerTask, recorder.maxFileBytes); err != nil {
 			return fmt.Errorf("record monitor sample for task %s: %w", reading.TaskID, err)

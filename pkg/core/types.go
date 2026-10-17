@@ -96,6 +96,18 @@ type ResourceReading struct {
 	NetworkTxBytes *uint64
 	// Pressure holds cumulative pressure stall totals, when the kernel has PSI.
 	Pressure *PressureReading
+	// CPUThrottling holds cumulative CFS bandwidth counters, when the cgroup's
+	// cpu controller is enabled.
+	CPUThrottling *CPUThrottling
+}
+
+// CPUThrottling is a runtime's cumulative CPU bandwidth enforcement from
+// cgroup v2 cpu.stat: enforcement periods elapsed, periods in which it was
+// throttled, and total time throttled. Periods stay zero without a CPU limit.
+type CPUThrottling struct {
+	Periods               uint64 `json:"periods"`
+	ThrottledPeriods      uint64 `json:"throttled_periods"`
+	ThrottledMicroseconds uint64 `json:"throttled_us"`
 }
 
 // PressureReading is Linux pressure stall information (PSI) for one runtime:
