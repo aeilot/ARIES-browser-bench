@@ -62,6 +62,12 @@ type fakeDeployment struct {
 	removeCalls              int
 	closeCalls               int
 	validatedSecrets         [][]byte
+
+	// gatewayStopStatus, when set, is the status a stop leads to after
+	// gatewayStoppingPolls status reads that report "stopping".
+	gatewayStopStatus    string
+	gatewayStoppingPolls int
+	spansDumpedAt        string
 }
 
 func newFakeDeployment(tests ...*testing.T) *fakeDeployment {
@@ -107,6 +113,9 @@ func (f *fakeDeployment) Exec(ctx context.Context, _ string, c core.Command) (co
 	case "hermes":
 		return core.CommandResult{Stdout: f.sessionsStdout, ExitCode: f.sessionsExit}, nil
 	case "python3":
+		f.mu.Lock()
+		f.spansDumpedAt = f.gatewayStatus
+		f.mu.Unlock()
 		return core.CommandResult{Stdout: f.spansStdout, Stderr: f.spansStderr, ExitCode: f.spansExit}, nil
 	case "/bin/sh":
 		if len(c.Args) > 2 && c.Args[2] == "aries-hermes-stt" {
@@ -166,12 +175,22 @@ func (f *fakeDeployment) serveGateway(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"run_id":"test-run","status":"started"}`)
 	case r.Method == "GET" && r.URL.Path == "/v1/runs/test-run":
+		if f.gatewayStatus == "stopping" && f.gatewayStopStatus != "" {
+			if f.gatewayStoppingPolls > 0 {
+				f.gatewayStoppingPolls--
+			} else {
+				f.gatewayStatus = f.gatewayStopStatus
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"run_id": "test-run", "session_id": f.gatewaySession, "status": f.gatewayStatus, "output": f.agentStdout, "error": f.gatewayError})
 	case r.Method == "POST" && r.URL.Path == "/v1/runs/test-run/stop":
 		f.gatewayCancelCalls++
 		if f.gatewayCancelStatus != 0 {
 			w.WriteHeader(f.gatewayCancelStatus)
 			return
+		}
+		if f.gatewayStatus == "running" {
+			f.gatewayStatus = "stopping"
 		}
 		_, _ = io.WriteString(w, `{"run_id":"test-run","status":"stopping"}`)
 	default:
@@ -1061,6 +1080,7 @@ func TestRunOutcomeRecordsNativeTerminalState(t *testing.T) {
 		t.Run(tc.reason, func(t *testing.T) {
 			fake := newFakeDeployment(t)
 			fake.gatewayStatus = tc.native
+			fake.gatewayStopStatus = "cancelled"
 			manager := newTestManager(t, fake, []byte("model-secret"))
 			request := testRequest(t)
 			if err := manager.Start(context.Background(), request); err != nil {
@@ -1094,6 +1114,13 @@ func TestRunOutcomeRecordsNativeTerminalState(t *testing.T) {
 			if outcome.Status != string(tc.status) || outcome.EndReason != tc.reason || outcome.RunID != "test-run" || outcome.SessionID != "aries-attempt" {
 				t.Fatalf("outcome = %+v", outcome)
 			}
+			wantStop := ""
+			if tc.native == "running" {
+				wantStop = "cancelled"
+			}
+			if outcome.StopStatus != wantStop {
+				t.Fatalf("stop status = %q, want %q", outcome.StopStatus, wantStop)
+			}
 			if outcome.StartedAt == "" || outcome.EndedAt < outcome.StartedAt || bytes.Contains(content, []byte("exit_code")) {
 				t.Fatalf("invalid Gateway timing/meaning: %s", content)
 			}
@@ -1102,6 +1129,97 @@ func TestRunOutcomeRecordsNativeTerminalState(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A run stopped at its deadline or on cancellation still holds the turn's
+// root span open. The spans are dumped only after Hermes reports the stopped
+// run terminal, which is when that root has ended and reached the store.
+func TestStoppedRunSettlesBeforeSpansAreDumped(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reason string
+		cause  error
+	}{
+		{"deadline", "deadline_exceeded", context.DeadlineExceeded},
+		{"canceled", "canceled", context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeDeployment(t)
+			fake.gatewayStatus = "running"
+			fake.gatewayStopStatus = "cancelled"
+			fake.gatewayStoppingPolls = 3
+			manager := newTestManager(t, fake, []byte("model-secret"))
+			request := testRequest(t)
+			if err := manager.Start(context.Background(), request); err != nil {
+				t.Fatal(err)
+			}
+			defer manager.Stop(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.name == "deadline" {
+				manager.active.AgentTimeout = 250 * time.Millisecond
+			} else {
+				time.AfterFunc(250*time.Millisecond, cancel)
+			}
+			result, runErr := manager.Run(ctx, "task")
+			if result.Status != core.StatusCanceled || !errors.Is(runErr, tc.cause) {
+				t.Fatalf("result=%#v error=%v", result, runErr)
+			}
+			outcome := readOutcome(t, manager, request)
+			if outcome.EndReason != tc.reason || outcome.StopStatus != "cancelled" {
+				t.Fatalf("outcome = %+v", outcome)
+			}
+			if fake.gatewayCancelCalls == 0 {
+				t.Fatal("run was not stopped")
+			}
+			if fake.spansDumpedAt != "cancelled" {
+				t.Fatalf("spans dumped while the run was %q", fake.spansDumpedAt)
+			}
+		})
+	}
+}
+
+// A stopped run that never settles is waited on for at most the cleanup
+// timeout; the outcome says so and the spans that did end are still kept.
+func TestUnsettledStopIsRecordedAndSpansKept(t *testing.T) {
+	fake := newFakeDeployment(t)
+	fake.gatewayStatus = "running"
+	manager := newTestManager(t, fake, []byte("model-secret"))
+	manager.runtime.Options.CleanupTimeout = 300 * time.Millisecond
+	request := testRequest(t)
+	if err := manager.Start(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Stop(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if _, runErr := manager.Run(ctx, "task"); !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("Run error = %v", runErr)
+	}
+	outcome := readOutcome(t, manager, request)
+	if outcome.EndReason != "deadline_exceeded" || outcome.StopStatus != stopUnsettled || outcome.StopWaitMS < 250 {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if fake.spansDumpedAt != "stopping" {
+		t.Fatalf("spans dumped while the run was %q", fake.spansDumpedAt)
+	}
+	content, err := os.ReadFile(filepath.Join(manager.runtime.Options.OutputDir, request.TaskID, "harness", "telemetry", "otel-spans.jsonl"))
+	if err != nil || string(content) != fake.spansStdout {
+		t.Fatalf("spans artifact = %q, %v", content, err)
+	}
+}
+
+func readOutcome(t *testing.T, manager *Manager, request core.HarnessRequest) runOutcome {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(manager.runtime.Options.OutputDir, request.TaskID, "harness", "session-outcome.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outcome runOutcome
+	if err := json.Unmarshal(content, &outcome); err != nil {
+		t.Fatal(err)
+	}
+	return outcome
 }
 
 func TestGatewayCancelFailureDoesNotPreventRuntimeRemoval(t *testing.T) {
