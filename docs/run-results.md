@@ -139,11 +139,13 @@ omitted field is not a zero):
 | `network_rx_bytes`, `network_tx_bytes` | Cumulative bytes over all interfaces | Docker stats |
 | `memory_peak_bytes` | Highest memory usage since the runtime started | cgroup v2 `memory.peak` |
 | `pressure.{cpu,memory,io}` | Cumulative pressure stall microseconds, `some_total_us` and `full_total_us` | cgroup v2 `*.pressure` |
+| `cpu_throttling` | Cumulative CPU limit enforcement: `periods`, `throttled_periods` and `throttled_us`; periods stay zero without a CPU limit | cgroup v2 `cpu.stat` |
 
 The cgroup fields are read through the runtime's init process in the host's
 `/proc` and `/sys/fs/cgroup`, so they need ARIES and the daemon on one Linux
 host (as the local-socket deployment already requires), cgroup v2, and, for
-`pressure`, a kernel with PSI enabled. Missing files leave them unmeasured;
+`pressure`, a kernel with PSI enabled, and, for `cpu_throttling`, the cgroup's
+cpu controller. Missing files leave them unmeasured;
 other read or parse errors fail the observation. The counters are cumulative;
 derive rates from differences between samples.
 Shared costs are not duplicated or apportioned across tasks. See the

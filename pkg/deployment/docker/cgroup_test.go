@@ -134,3 +134,31 @@ func TestDockerResourceSourceAddsOptionalMeasurements(t *testing.T) {
 		t.Fatalf("malformed cgroup file error = %v", err)
 	}
 }
+
+func TestCgroupReaderReadsCPUThrottling(t *testing.T) {
+	path := "/system.slice/docker-" + resourceSandboxID + ".scope"
+	reader := writeCgroupTree(t, "42", path, map[string]string{
+		"cpu.stat": "usage_usec 9000\nuser_usec 6000\nsystem_usec 3000\nnr_periods 120\nnr_throttled 30\nthrottled_usec 450000\n",
+	})
+	var reading core.ResourceReading
+	if err := reader.read(42, resourceSandboxID, &reading); err != nil {
+		t.Fatal(err)
+	}
+	if got := reading.CPUThrottling; got == nil || *got != (core.CPUThrottling{Periods: 120, ThrottledPeriods: 30, ThrottledMicroseconds: 450000}) {
+		t.Fatalf("cpu throttling = %+v", got)
+	}
+
+	reader = writeCgroupTree(t, "42", path, map[string]string{"cpu.stat": "usage_usec 9000\nuser_usec 6000\nsystem_usec 3000\n"})
+	reading = core.ResourceReading{}
+	if err := reader.read(42, resourceSandboxID, &reading); err != nil {
+		t.Fatal(err)
+	}
+	if reading.CPUThrottling != nil {
+		t.Fatalf("throttling without the cpu controller = %+v, want unmeasured", reading.CPUThrottling)
+	}
+
+	reader = writeCgroupTree(t, "42", path, map[string]string{"cpu.stat": "nr_periods 120\n"})
+	if err := reader.read(42, resourceSandboxID, &core.ResourceReading{}); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("incomplete counters error = %v", err)
+	}
+}

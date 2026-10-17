@@ -46,6 +46,7 @@ type ResourceSample struct {
 	NetworkRxBytes   *uint64               `json:"network_rx_bytes,omitempty"`
 	NetworkTxBytes   *uint64               `json:"network_tx_bytes,omitempty"`
 	Pressure         *core.PressureReading `json:"pressure,omitempty"`
+	CPUThrottling    *core.CPUThrottling   `json:"cpu_throttling,omitempty"`
 }
 
 // Index is the bounded summary written beside resource samples for one scope.

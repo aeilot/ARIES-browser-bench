@@ -15,8 +15,8 @@ import (
 	"github.com/hyscale-lab/aries/pkg/core"
 )
 
-// cgroupReader reads the measurements Docker's stats API lacks, memory.peak
-// and pressure stall information, from a runtime's cgroup v2 directory. It
+// cgroupReader reads the measurements Docker's stats API lacks, memory.peak,
+// pressure stall information and CPU throttling, from a runtime's cgroup v2 directory. It
 // finds the directory through the runtime's init process in the host's
 // /proc, so it applies only when the daemon shares the host with ARIES, which
 // ARIES's local-socket deployment requires. A capability that is absent (no
@@ -62,7 +62,8 @@ func (reader cgroupReader) directory(pid int, runtimeID string) (string, bool, e
 	return "", false, nil
 }
 
-// read adds memory.peak and PSI totals for the runtime to reading.
+// read adds memory.peak, PSI totals and CPU throttling for the runtime to
+// reading.
 func (reader cgroupReader) read(pid int, runtimeID string, reading *core.ResourceReading) error {
 	directory, ok, err := reader.directory(pid, runtimeID)
 	if err != nil || !ok {
@@ -87,7 +88,51 @@ func (reader cgroupReader) read(pid int, runtimeID string, reading *core.Resourc
 	if pressure.CPU != nil || pressure.Memory != nil || pressure.IO != nil {
 		reading.Pressure = &pressure
 	}
-	return nil
+	reading.CPUThrottling, err = readCPUThrottling(filepath.Join(directory, "cpu.stat"))
+	return err
+}
+
+// readCPUThrottling parses the bandwidth lines of cpu.stat, such as
+//
+//	nr_periods 120
+//	nr_throttled 30
+//	throttled_usec 450000
+//
+// cpu.stat lacks them when the cgroup's cpu controller is disabled, which
+// leaves throttling unmeasured.
+func readCPUThrottling(path string) (*core.CPUThrottling, error) {
+	data, err := os.ReadFile(path)
+	if absent(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	values := map[string]uint64{}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		switch fields[0] {
+		case "nr_periods", "nr_throttled", "throttled_usec":
+			value, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("parse %s: %w", path, err)
+			}
+			values[fields[0]] = value
+		}
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if len(values) != 3 {
+		return nil, fmt.Errorf("parse %s: incomplete throttling counters", path)
+	}
+	return &core.CPUThrottling{
+		Periods: values["nr_periods"], ThrottledPeriods: values["nr_throttled"],
+		ThrottledMicroseconds: values["throttled_usec"],
+	}, nil
 }
 
 func readCgroupUint(path string) (*uint64, error) {
