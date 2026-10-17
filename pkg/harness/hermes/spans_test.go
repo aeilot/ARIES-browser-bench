@@ -63,3 +63,19 @@ func TestSpanDumpScriptStopsAtWholeLineUnderLimit(t *testing.T) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 }
+
+func TestUnresolvedSpanParentsCountsOnlyAbsentParents(t *testing.T) {
+	dump := []byte(`{"span_id":"root","parent_span_id":null}
+{"span_id":"a","parent_span_id":"root"}
+{"span_id":"b","parent_span_id":"open"}
+{"span_id":"c","parent_span_id":"open"}
+{"span_id":"d","parent_span_id":"gone"}
+not json
+`)
+	if spans, parents := unresolvedSpanParents(dump); spans != 3 || parents != 2 {
+		t.Fatalf("spans=%d parents=%d", spans, parents)
+	}
+	if spans, parents := unresolvedSpanParents([]byte(`{"span_id":"root"}` + "\n")); spans != 0 || parents != 0 {
+		t.Fatalf("spans=%d parents=%d", spans, parents)
+	}
+}

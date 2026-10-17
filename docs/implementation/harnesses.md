@@ -57,7 +57,10 @@ path as a text instruction. It does not stream audio through the Hermes API.
 
 Final text comes from the native run's `output`; the trajectory remains Hermes's
 SQLite session export. `session-outcome.json` records the native run/session IDs,
-terminal state, and submission-to-observation timing. See the
+terminal state, and submission-to-observation timing. When ARIES stops a run it
+has not seen end (deadline or cancellation), it waits up to the cleanup timeout
+for a native terminal state before collecting artifacts and records that state
+as `stop_status` (`unsettled` if none arrived) with `stop_wait_ms`. See the
 [artifact guide](../run-results.md) for the migration mapping.
 
 ### Pinned Gateway compatibility
@@ -159,6 +162,17 @@ dumps them to `telemetry/otel-spans.jsonl`. A missing or empty store is not a
 failure; a dump that would exceed the exec output bound keeps the spans that
 fit, in end order, and logs a warning; any other dump failure fails the run,
 like other artifact collection failures.
+The store holds only ended spans, and the plugin ends a turn's root `agent`
+span in `on_session_end`, which Hermes runs as the turn unwinds. A stopped run
+is therefore dumped only after Hermes reports it terminal (see `stop_status`
+above), so the root is in the store. An interrupted turn can also leave a
+child open, such as the `llm.<model>` span that parents its API and tool
+spans, because Hermes skips `post_llm_call`. hermes-otel 1.31.0 and later end
+such children in `on_session_end` and mark them `hermes.span.ended_by: sweep`
+with `hermes.span.sweep_reason: turn_end`, so the end time is the turn end,
+not the operation end; the pin must not go below that release. If the dump
+still contains spans whose parent it lacks, they are kept unchanged and a
+warning is logged: the dump never fabricates a parent or an end time.
 Each span carries the wall-clock start and end of one tool call, model call, or
 API request, which Hermes's session export does not record. The spans do not
 reach bridge execs: Hermes passes no trace context over SSH, so execs are

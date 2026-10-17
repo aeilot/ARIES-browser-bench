@@ -159,10 +159,41 @@ Historical CLI artifacts map as follows:
 | --- | --- |
 | `hermes_stdout.log` | `gateway-output.txt`: native run `output`, rather than process standard output. |
 | `hermes_stderr.log` | Removed; service diagnostics are retained in bounded, redacted `container.log`. |
-| `session-outcome.json` with `exit_code` | Same filename, with `run_id`, `session_id`, native `end_reason`, and ARIES `status`; no CLI exit code. Timing covers submission through terminal observation, separately from voice preparation. |
+| `session-outcome.json` with `exit_code` | Same filename, with `run_id`, `session_id`, native `end_reason`, and ARIES `status`; no CLI exit code. Timing covers submission through terminal observation, separately from voice preparation. A run ARIES stopped at `agent_timeout_seconds` or on cancellation also records `stop_status` and `stop_wait_ms` (see below). |
 | `telemetry/sessions.jsonl` | Retained native message-level session export. |
 | `telemetry/otel-spans.jsonl` | Tool, model, and API timing from the pinned `hermes-otel` plugin; see [collection limits](implementation/harnesses.md#hermes). |
 | `config.yaml`, voice artifacts | Retained private configuration, audio, transcript, and voice result. |
+
+### Timed-out and canceled Hermes runs
+
+When a run reaches `agent_timeout_seconds` (`end_reason: deadline_exceeded`) or
+is canceled (`end_reason: canceled`), ARIES asks Hermes to stop it and waits, for
+at most the harness cleanup timeout (30 s by default), for the run to reach a
+native terminal state before collecting artifacts. Hermes marks a stopped run
+`cancelled` only after the turn has unwound, which ends the turn's root `agent`
+span and commits it to the span store. Without that wait the root was still
+open at the dump, so every other span of the turn named a parent missing from
+`telemetry/otel-spans.jsonl`, and a span DAG built from it fell apart.
+
+- `stop_status` is the native state Hermes reached after the stop, normally
+  `cancelled`. The root `agent` span then carries its real end time and
+  `hermes.session.interrupted: true`, with `hermes.turn.final_status`
+  `interrupted`.
+  A child the interrupt cut short, typically the `llm.<model>` span, is ended
+  at the turn end by the plugin and marked `hermes.span.ended_by: sweep`,
+  `hermes.span.sweep_reason: turn_end`; its duration therefore stops at the
+  interrupt, not at a natural end.
+- `stop_status: unsettled` means Hermes did not settle in time, for example
+  because a tool call ignored the interrupt. Spans still open at the dump are
+  absent, and their children keep `parent_span_id` values with no matching
+  span. ARIES does not invent those parents or their end times; `aries.log`
+  warns with the number of affected spans.
+- `stop_wait_ms` is how long ARIES waited. `ended_at` and `duration_ms` still
+  mark the deadline, so they stay comparable with runs before this change.
+
+Runs collected before this change (for example the October 2026 browserbench
+concurrency sweeps) lack these fields, and their timed-out tasks have spans
+with unresolved parents.
 
 A completed native run is a harness outcome. Check isolation, evaluation, and
 cleanup separately in `run-result.json`. Historical CLI runs used
@@ -230,6 +261,10 @@ bridge artifacts may contain task or model content; review them before sharing.
 - **Hermes Gateway error:** inspect `harness/session-outcome.json`,
   `harness/container.log`, and `harness/gateway-output.txt`, then compare the
   independent harness, isolation, evaluation, and cleanup outcomes.
+- **Hermes spans with missing parents:** check `stop_status` in
+  `harness/session-outcome.json`. `unsettled` means the timed-out run did not
+  stop within the cleanup timeout, so its open spans were never written; see
+  [timed-out and canceled Hermes runs](#timed-out-and-canceled-hermes-runs).
 - **SGLang configuration error:** confirm that the YAML uses only the supported
   fields and that its served model and port match the profile in managed mode.
   External mode does not validate the native YAML file.
