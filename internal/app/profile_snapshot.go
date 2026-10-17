@@ -29,6 +29,23 @@ func persistProfileSnapshot(root string, cfg config.Config) error {
 			snapshot[resources.prefix+"_memory_limit_mb"] = *memory
 		}
 	}
+	if timeout := cfg.Overrides.AgentTimeoutSeconds; timeout != nil {
+		snapshot["agent_timeout_seconds"] = *timeout
+	}
+	if environment := cfg.Benchmark.Environment; environment != nil {
+		if environment.Image != "" {
+			snapshot["sandbox_image"] = environment.Image
+		}
+		if environment.ShmSizeMB != 0 {
+			snapshot["sandbox_shm_size_mb"] = environment.ShmSizeMB
+		}
+	}
+	if image := harnessImage(cfg); image != "" {
+		snapshot["harness_image"] = image
+	}
+	if len(cfg.Benchmark.Tasks) != 0 {
+		snapshot["task_count"] = len(cfg.Benchmark.Tasks)
+	}
 	if cfg.Model.Temperature != nil {
 		snapshot["temperature"] = *cfg.Model.Temperature
 	}
@@ -49,4 +66,16 @@ func persistProfileSnapshot(root string, cfg config.Config) error {
 		return fmt.Errorf("persist run profile snapshot: %w", err)
 	}
 	return nil
+}
+
+// harnessImage returns the pinned image of the selected harness, which
+// identifies its version; harnesses without a pinned image return "".
+func harnessImage(cfg config.Config) string {
+	switch cfg.Harness.Type {
+	case "hermes":
+		return cfg.Versions.Hermes.Image
+	case "openclaw":
+		return cfg.Versions.OpenClaw.Image
+	}
+	return ""
 }
