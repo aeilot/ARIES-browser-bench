@@ -40,7 +40,9 @@ runtime backend as provider, concurrency, and explicitly supplied resource
 and model request settings. `harness_cpu_limit` and `harness_memory_limit_mb`
 record harness overrides independently from `sandbox_cpu_limit` and
 `sandbox_memory_limit_mb`. Explicit zero means unlimited; an omitted dimension
-retains its unknown/task-default meaning. The snapshot does not claim resolved
+retains its unknown/task-default meaning. Explicit `agent_timeout_seconds`, the
+benchmark environment's `sandbox_image` and `sandbox_shm_size_mb`, the pinned
+`harness_image`, and the declared `task_count` are recorded when present. The snapshot does not claim resolved
 benchmark resource defaults or effective resources for every task. Explicit
 `temperature`, `max_tokens`, `context_length`, and `reasoning_effort` preserve
 model request settings; omitted values do not imply provider defaults.

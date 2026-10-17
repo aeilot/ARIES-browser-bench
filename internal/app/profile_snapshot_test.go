@@ -94,3 +94,35 @@ func TestProfileSnapshotIndependentResourceAndRequestSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestProfileSnapshotSweepConditions(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "run")
+	if e := createRunOutputRoot(root); e != nil {
+		t.Fatal(e)
+	}
+	timeout := 600.0
+	cfg := config.Config{}
+	cfg.Harness.Type = "hermes"
+	cfg.Versions.Hermes.Image = "hermes:v1"
+	cfg.Versions.OpenClaw.Image = "openclaw:v1"
+	cfg.Overrides.AgentTimeoutSeconds = &timeout
+	cfg.Benchmark.Tasks = []string{"a", "b"}
+	cfg.Benchmark.Environment = &config.BenchmarkEnvironment{Image: "sandbox:v1", ShmSizeMB: 256, Workdir: "PRIVATE_SENTINEL"}
+	if e := persistProfileSnapshot(root, cfg); e != nil {
+		t.Fatal(e)
+	}
+	b, e := os.ReadFile(filepath.Join(root, "run-profile.json"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if strings.Contains(string(b), "PRIVATE_SENTINEL") {
+		t.Fatal("private config leaked")
+	}
+	var snapshot map[string]any
+	if e = json.Unmarshal(b, &snapshot); e != nil {
+		t.Fatal(e)
+	}
+	if snapshot["agent_timeout_seconds"] != float64(600) || snapshot["sandbox_shm_size_mb"] != float64(256) || snapshot["sandbox_image"] != "sandbox:v1" || snapshot["harness_image"] != "hermes:v1" || snapshot["task_count"] != float64(2) {
+		t.Fatal(snapshot)
+	}
+}
