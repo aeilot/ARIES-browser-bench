@@ -179,6 +179,10 @@ open at the dump, so every other span of the turn named a parent missing from
   `cancelled`. The root `agent` span then carries its real end time and
   `hermes.session.interrupted: true`, with `hermes.turn.final_status`
   `interrupted`.
+  A child the interrupt cut short, typically the `llm.<model>` span, is ended
+  at the turn end by the plugin and marked `hermes.span.ended_by: sweep`,
+  `hermes.span.sweep_reason: turn_end`; its duration therefore stops at the
+  interrupt, not at a natural end.
 - `stop_status: unsettled` means Hermes did not settle in time, for example
   because a tool call ignored the interrupt. Spans still open at the dump are
   absent, and their children keep `parent_span_id` values with no matching

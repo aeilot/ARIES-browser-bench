@@ -165,9 +165,14 @@ like other artifact collection failures.
 The store holds only ended spans, and the plugin ends a turn's root `agent`
 span in `on_session_end`, which Hermes runs as the turn unwinds. A stopped run
 is therefore dumped only after Hermes reports it terminal (see `stop_status`
-above), so the root is in the store. If the dump still contains spans whose
-parent it lacks, they are kept unchanged and a warning is logged: the dump
-never fabricates a parent or an end time.
+above), so the root is in the store. An interrupted turn can also leave a
+child open, such as the `llm.<model>` span that parents its API and tool
+spans, because Hermes skips `post_llm_call`. hermes-otel 1.31.0 and later end
+such children in `on_session_end` and mark them `hermes.span.ended_by: sweep`
+with `hermes.span.sweep_reason: turn_end`, so the end time is the turn end,
+not the operation end; the pin must not go below that release. If the dump
+still contains spans whose parent it lacks, they are kept unchanged and a
+warning is logged: the dump never fabricates a parent or an end time.
 Each span carries the wall-clock start and end of one tool call, model call, or
 API request, which Hermes's session export does not record. The spans do not
 reach bridge execs: Hermes passes no trace context over SSH, so execs are
