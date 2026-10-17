@@ -818,7 +818,9 @@ for (data,) in rows:
 // Each tool, model, and API span carries the wall-clock time its call started
 // and ended, which Hermes's own session export does not record. A missing
 // store or an empty one is not a failure; a dump over spanDumpLimit keeps the
-// spans that fit and logs a warning; any other dump failure is an error.
+// spans that fit and logs a warning; any other dump failure is an error. Spans
+// whose parent is absent from the dump are kept as they are and logged: the
+// dump never invents a parent or an end time.
 func (manager *Manager) collectSpans(ctx context.Context, active *session) ([]string, error) {
 	result, err := manager.runtime.Options.Deployment.Exec(ctx, active.ID, core.Command{
 		Path: "python3", Args: []string{"-c", spanDumpScript, otelStorePath, strconv.Itoa(spanDumpLimit)},
@@ -842,11 +844,43 @@ func (manager *Manager) collectSpans(ctx context.Context, active *session) ([]st
 		logger.Debug("Hermes produced no spans")
 		return nil, nil
 	}
+	if orphans, parents := unresolvedSpanParents([]byte(result.Stdout)); orphans > 0 {
+		logger.WithFields(logrus.Fields{"spans": orphans, "missing_parents": parents}).Warn("Hermes spans reference parents the store does not hold; those parents never ended")
+	}
 	path := filepath.Join(active.ArtifactDir, "telemetry", "otel-spans.jsonl")
 	if err := privatefiles.WriteArtifact(path, active.Credentials.Redact([]byte(result.Stdout))); err != nil {
 		return nil, fmt.Errorf("retain Hermes spans: %w", err)
 	}
 	return []string{path}, nil
+}
+
+// unresolvedSpanParents counts the dumped spans whose parent_span_id names no
+// dumped span, and the distinct parents they name. The store holds only ended
+// spans, so a nonzero count means a parent was still open at the dump (or was
+// cut by the dump limit). Lines that do not parse are not counted.
+func unresolvedSpanParents(dump []byte) (spans, parents int) {
+	type link struct {
+		SpanID       string `json:"span_id"`
+		ParentSpanID string `json:"parent_span_id"`
+	}
+	var links []link
+	known := make(map[string]bool)
+	for _, line := range bytes.Split(dump, []byte("\n")) {
+		var span link
+		if json.Unmarshal(line, &span) != nil {
+			continue
+		}
+		links = append(links, span)
+		known[span.SpanID] = true
+	}
+	missing := make(map[string]bool)
+	for _, span := range links {
+		if span.ParentSpanID != "" && !known[span.ParentSpanID] {
+			spans++
+			missing[span.ParentSpanID] = true
+		}
+	}
+	return spans, len(missing)
 }
 
 func lastJSONObject(text string) (map[string]any, bool) {
