@@ -468,6 +468,34 @@ type BridgeConfig struct {
 	// raw wire commands, request payloads, and binary stdin; profiles that need
 	// that forensic record must opt in by setting it true.
 	RetainRawLog *bool `json:"retain_raw_log,omitempty"`
+	// Suspend pauses each sandbox between tool calls; omitted means off.
+	Suspend *core.SandboxSuspend `json:"suspend,omitempty"`
+}
+
+// SuspendPolicy returns the sandbox suspension policy, off when omitted.
+func (c BridgeConfig) SuspendPolicy() core.SandboxSuspend {
+	if c.Suspend == nil || c.Suspend.Mode == "" {
+		return core.SandboxSuspend{Mode: core.SuspendOff}
+	}
+	return *c.Suspend
+}
+
+func (c BridgeConfig) validateSuspend() error {
+	if c.Suspend == nil {
+		return nil
+	}
+	switch c.Suspend.Mode {
+	case "", core.SuspendOff, core.SuspendProxy, core.SuspendPause:
+	default:
+		return errors.New("bridge.suspend.mode must be off, proxy, or pause")
+	}
+	if c.Suspend.GraceMS < 0 {
+		return errors.New("bridge.suspend.grace_ms must not be negative")
+	}
+	if c.Suspend.GraceMS != 0 && c.Suspend.Mode != core.SuspendPause {
+		return errors.New("bridge.suspend.grace_ms requires mode pause")
+	}
+	return nil
 }
 
 // RetainBridgeRawLog reports whether ssh_raw.log should be written, defaulting
@@ -806,6 +834,9 @@ func (c *Config) validate() error {
 		if strings.TrimSpace(check.value) == "" {
 			return fmt.Errorf("%s is required", check.name)
 		}
+	}
+	if err := c.Bridge.validateSuspend(); err != nil {
+		return err
 	}
 	if c.Runtime.Backend != "deepseek" && c.Runtime.Backend != "sglang" && c.Runtime.Backend != "openai" {
 		return errors.New("runtime.backend must be deepseek, sglang, or openai")

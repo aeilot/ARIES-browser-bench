@@ -29,6 +29,13 @@ type Backend interface {
 	ExecStream(context.Context, string, core.Command, io.Reader, io.Writer, io.Writer) (core.CommandResult, error)
 }
 
+// Suspender is an optional Backend capability: pausing and resuming a
+// borrowed runtime between tool calls, without changing its lifecycle.
+type Suspender interface {
+	PauseRuntime(context.Context, string) error
+	UnpauseRuntime(context.Context, string) error
+}
+
 type Borrowed struct {
 	mu         sync.Mutex
 	revoked    bool
@@ -96,4 +103,16 @@ func (b *Borrowed) Revoke() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.revoked = true
+}
+
+// Suspender returns the backend's pause capability bound to this target, if
+// the backend has one.
+func (b *Borrowed) Suspender() (pause, unpause func(context.Context) error, ok bool) {
+	s, ok := b.backend.(Suspender)
+	if !ok {
+		return nil, nil, false
+	}
+	id := b.descriptor.RuntimeID
+	return func(ctx context.Context) error { return s.PauseRuntime(ctx, id) },
+		func(ctx context.Context) error { return s.UnpauseRuntime(ctx, id) }, true
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hyscale-lab/aries/pkg/core"
 )
 
 const validConfig = `{
@@ -1062,5 +1064,24 @@ func TestJudgeSharedModelSettings(t *testing.T) {
 	}
 	if _, err := Decode(strings.NewReader(strings.Replace(custom, `"judge":{`, `"judge":{"reasoning_effort":"low",`, 1))); err == nil {
 		t.Fatal("accepted explicit reasoning for unsupported provider")
+	}
+}
+
+func TestBridgeSuspendPolicy(t *testing.T) {
+	with := func(suspend string) string {
+		return strings.Replace(validConfig, `"bridge":{"type":"openclaw-ssh"}`, `"bridge":{"type":"openclaw-ssh","suspend":`+suspend+`}`, 1)
+	}
+	cfg, err := Decode(strings.NewReader(validConfig))
+	if err != nil || cfg.Bridge.SuspendPolicy() != (core.SandboxSuspend{Mode: core.SuspendOff}) {
+		t.Fatalf("an omitted policy must be off: %+v %v", cfg.Bridge.SuspendPolicy(), err)
+	}
+	cfg, err = Decode(strings.NewReader(with(`{"mode":"pause","grace_ms":2000}`)))
+	if err != nil || cfg.Bridge.SuspendPolicy() != (core.SandboxSuspend{Mode: core.SuspendPause, GraceMS: 2000}) {
+		t.Fatalf("policy = %+v, err = %v", cfg.Bridge.SuspendPolicy(), err)
+	}
+	for _, rejected := range []string{`{"mode":"freeze"}`, `{"mode":"pause","grace_ms":-1}`, `{"mode":"proxy","grace_ms":100}`, `{"mode":"pause","future":1}`} {
+		if _, err := Decode(strings.NewReader(with(rejected))); err == nil {
+			t.Fatalf("expected rejection of %s", rejected)
+		}
 	}
 }

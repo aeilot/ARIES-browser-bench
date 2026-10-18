@@ -183,6 +183,7 @@ func newSharedBridge(cfg config.Config, runID, outputRoot string, placement core
 	}
 	// Sandbox execution access is selected independently of bridge placement.
 	launch.Config.Backend = cfg.Sandbox.Deployment.Backend
+	launch.Config.Suspend = cfg.Bridge.SuspendPolicy()
 	switch cfg.Sandbox.Deployment.Backend {
 	case "docker":
 		launch.Config.BackendEndpoint, launch.Request.Mounts = deploymentwiring.DockerExecutionAccess(cfg.Sandbox.Deployment.Docker.Socket)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,6 +116,14 @@ func (s *Session) Start(ctx context.Context, sandbox runner.Sandbox) (core.ToolE
 	if s.service.options.RetainRawLog {
 		endpoint.LogPaths = append(endpoint.LogPaths, filepath.Join(s.local, "ssh_raw.log"))
 	}
+	if s.service.options.Launch.Config.Suspend.Proxied() {
+		if endpoint.MCPServers, err = s.proxiedMCPServers(ctx, sandbox.Connectivity().MCPServers); err != nil {
+			return core.ToolEndpoint{}, err
+		}
+	}
+	if s.service.options.Launch.Config.Suspend.Mode == core.SuspendPause {
+		endpoint.LogPaths = append(endpoint.LogPaths, filepath.Join(s.local, suspendRecord))
+	}
 	client := s.service.options.Client
 	if client.SourcePath != "" {
 		endpoint.ClientCommand = client.Command
@@ -126,6 +135,30 @@ func (s *Session) Start(ctx context.Context, sandbox runner.Sandbox) (core.ToolE
 	}
 	s.exposed = true
 	return endpoint, nil
+}
+
+// proxiedMCPServers points each of the sandbox's MCP servers at the bridge's
+// proxy, which forwards to the same server and counts its calls.
+func (s *Session) proxiedMCPServers(ctx context.Context, servers []core.MCPServerConfig) ([]core.MCPServerConfig, error) {
+	if len(servers) == 0 {
+		return nil, nil
+	}
+	proxyPort := s.service.options.Launch.Config.MCPProxyPort
+	address, err := s.service.options.Runtime.(deployment.ServiceRuntime).TaskAddress(ctx, s.service.runtimeID, proxyPort)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bridge MCP proxy: %w", err)
+	}
+	out := make([]core.MCPServerConfig, 0, len(servers))
+	for _, server := range servers {
+		u, err := url.Parse(server.URL)
+		if err != nil || u.Scheme != "http" || u.Hostname() != s.descriptor.SandboxID || u.Port() == "" {
+			return nil, fmt.Errorf("MCP server %q is not served by this sandbox over HTTP", server.Name)
+		}
+		proxied := server
+		proxied.URL = (&url.URL{Scheme: "http", Host: address, Path: MCPProxyPath + s.descriptor.SandboxID + "/" + u.Port() + u.EscapedPath(), RawQuery: u.RawQuery}).String()
+		out = append(out, proxied)
+	}
+	return out, nil
 }
 func (s *Session) request() *v1.SandboxRequest {
 	return &v1.SandboxRequest{SandboxId: s.descriptor.SandboxID}
@@ -171,9 +204,9 @@ func (s *Session) Stop(ctx context.Context) error {
 		}
 	}
 	if s.released && !s.collected {
-		expected := map[string]bool{"tool-calls.jsonl": false}
-		if s.service.options.RetainRawLog {
-			expected["ssh_raw.log"] = false
+		expected := map[string]bool{}
+		for _, name := range EvidenceNames(s.service.options.RetainRawLog, s.service.options.Launch.Config.Suspend) {
+			expected[name] = false
 		}
 		for _, entry := range s.manifest {
 			seen, ok := expected[entry.Name]

@@ -174,7 +174,30 @@ type ToolEndpoint struct {
 	// Workdir is the sandbox directory the endpoint runs agent commands in,
 	// for a harness that must name it to its own tool layer.
 	Workdir string `json:"workdir,omitempty"`
+	// MCPServers, when set, replace HarnessConnectivity.MCPServers: the
+	// bridge serves the sandbox's MCP servers through its own proxy so that
+	// it sees every tool call (see SandboxSuspend).
+	MCPServers []MCPServerConfig `json:"mcp_servers,omitempty"`
 }
+
+// Sandbox suspension modes.
+const (
+	SuspendOff   = "off"   // the harness reaches MCP servers directly
+	SuspendProxy = "proxy" // MCP calls go through the bridge, nothing is paused
+	SuspendPause = "pause" // the bridge also pauses the sandbox between tool calls
+)
+
+// SandboxSuspend configures pausing a sandbox while no tool call uses it.
+// The bridge counts MCP calls (through its proxy) and command executions;
+// GraceMS after the last one finishes it pauses the sandbox, and the next
+// call unpauses it first. The sandbox is unpaused before evaluation.
+type SandboxSuspend struct {
+	Mode    string `json:"mode,omitempty"`
+	GraceMS int    `json:"grace_ms,omitempty"`
+}
+
+// Proxied reports whether MCP calls go through the bridge.
+func (s SandboxSuspend) Proxied() bool { return s.Mode == SuspendProxy || s.Mode == SuspendPause }
 
 // RuntimePlacement carries the task attachment to the deployment implementation.
 // Backend-specific attachment identities remain owned by RunEnvironment.

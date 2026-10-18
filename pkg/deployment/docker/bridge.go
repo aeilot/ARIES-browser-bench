@@ -33,3 +33,16 @@ func (manager *Manager) ValidateBridgeTarget(ctx context.Context, d core.BridgeT
 	}
 	return nil
 }
+
+// PauseRuntime freezes a borrowed sandbox's processes (cgroup freezer). The
+// bridge pauses only a target it has validated, and only between tool calls.
+func (manager *Manager) PauseRuntime(ctx context.Context, id string) error {
+	_, err := manager.client.ContainerPause(ctx, id, client.ContainerPauseOptions{})
+	return err
+}
+
+// UnpauseRuntime resumes a sandbox frozen by PauseRuntime.
+func (manager *Manager) UnpauseRuntime(ctx context.Context, id string) error {
+	_, err := manager.client.ContainerUnpause(ctx, id, client.ContainerUnpauseOptions{})
+	return err
+}

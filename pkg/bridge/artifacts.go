@@ -25,7 +25,9 @@ type Artifact struct {
 	SHA256 string
 }
 
-func evidenceName(name string) bool { return name == "tool-calls.jsonl" || name == "ssh_raw.log" }
+func evidenceName(name string) bool {
+	return name == "tool-calls.jsonl" || name == "ssh_raw.log" || name == suspendRecord
+}
 func finalizeArtifacts(root string, names []string) ([]Artifact, error) {
 	result := make([]Artifact, 0, len(names))
 	for _, name := range names {

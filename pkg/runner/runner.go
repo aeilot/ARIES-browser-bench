@@ -250,8 +250,13 @@ func (r *Runner) runTask(ctx context.Context, task core.Task) (core.TaskResult, 
 	}
 	result.ToolLogPaths = append([]string(nil), endpoint.LogPaths...)
 
+	connectivity := sandbox.Connectivity()
+	if len(endpoint.MCPServers) > 0 {
+		// The bridge proxies the sandbox's MCP servers so that it sees each call.
+		connectivity.MCPServers = endpoint.MCPServers
+	}
 	request := core.HarnessRequest{
-		Connectivity: sandbox.Connectivity(),
+		Connectivity: connectivity,
 		RunID:        r.runID,
 		TaskID:       task.ID,
 		Endpoint:     endpoint,

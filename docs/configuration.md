@@ -832,3 +832,17 @@ Changing the main agent's generation settings does not change FACT requests.
 - `harness.voice_transcribe`: see the [voice guide](voice_mode.md).
 - `bridge.retain_raw_log`: defaults to false. Enabling it retains sensitive,
   replayable SSH input; see [run artifacts](run-results.md#bridge-evidence).
+- `bridge.suspend`: pauses each sandbox between tool calls, for measuring
+  how long a sandbox sits live but idle and what freezing it costs.
+  `{"mode": "off"}` (the default) leaves the harness connected to the
+  sandbox's MCP servers directly. `"proxy"` routes MCP calls through the
+  bridge (port 8932, `/s/<sandbox_id>/<port>/<path>`) without pausing, which
+  isolates the cost of the extra hop. `"pause"` also counts MCP calls and SSH
+  commands per sandbox; `grace_ms` after the last one finishes, the bridge
+  runs `docker pause`, and the next call unpauses the sandbox first. The
+  long-lived MCP GET notification stream does not count as a call. A failed
+  pause or unpause disables suspension for that sandbox without failing the
+  task, and the bridge unpauses the sandbox before evaluation. Each event is
+  recorded in the occurrence's `bridge/suspend.jsonl` with its request
+  latency and, for an unpause, how long the sandbox had been paused.
+  `grace_ms` requires mode `pause`.

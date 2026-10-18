@@ -24,4 +24,9 @@ type LaunchConfig struct {
 	ControlAddress  string            `json:"control_address"`
 	OutputDir       string            `json:"output_dir"`
 	RetainRawLog    bool              `json:"retain_raw_log"`
+	// Suspend is the run's sandbox suspension policy. When it proxies MCP,
+	// the bridge serves every sandbox's MCP servers on MCPProxyPort under
+	// /s/<sandbox_id>/<port>/<path>.
+	Suspend      core.SandboxSuspend `json:"suspend"`
+	MCPProxyPort int                 `json:"mcp_proxy_port,omitempty"`
 }
