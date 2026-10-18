@@ -340,3 +340,24 @@ func TestRunResourceScopeRequiresNoTaskSelection(t *testing.T) {
 		t.Fatalf("run scope = %#v", source)
 	}
 }
+
+// A sandbox paused between tool calls keeps its memory and must still be
+// sampled, or suspension would erase the evidence it is meant to produce.
+func TestDockerResourceSourceSamplesPausedRuntimes(t *testing.T) {
+	source, fake := newFakeResourceSource()
+	for i := range fake.items {
+		if fake.items[i].ID == resourceSandboxID {
+			fake.items[i].State = containertypes.StatePaused
+			inspection := fake.inspections[resourceSandboxID]
+			inspection.State = &containertypes.State{Status: containertypes.StatePaused, Running: true, Paused: true}
+			fake.inspections[resourceSandboxID] = inspection
+		}
+	}
+	readings, err := source.Sample(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readings) != 2 || readings[1].Component != "sandbox" || readings[1].MemoryUsageBytes != 4096 {
+		t.Fatalf("a paused sandbox must still be sampled: %+v", readings)
+	}
+}

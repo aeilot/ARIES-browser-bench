@@ -143,7 +143,7 @@ func (source *DockerResourceSource) discover(ctx context.Context) ([]resourceRun
 		} else if component == "bridge" {
 			selected = false
 		}
-		if !selected || !supported || summary.State != containertypes.StateRunning {
+		if !selected || !supported || !measurable(summary.State) {
 			continue
 		}
 		if summary.ID == "" || len(summary.Names) != 1 || !strings.HasPrefix(summary.Names[0], "/") {
@@ -268,6 +268,13 @@ func validateResourceLabels(labels map[string]string, runID string) error {
 	return nil
 }
 
+// measurable reports whether a runtime in this state is live. A paused
+// runtime (bridge.suspend) is frozen between tool calls but keeps its memory,
+// so it is still sampled; its CPU counter simply stops advancing.
+func measurable(state containertypes.ContainerState) bool {
+	return state == containertypes.StateRunning || state == containertypes.StatePaused
+}
+
 func validateResourceInspection(inspection containertypes.InspectResponse, id, name string, labels map[string]string, runID string) error {
 	if inspection.ID != id || inspection.Name != "/"+name {
 		return errors.New("identity differs from the container list record")
@@ -286,7 +293,7 @@ func validateResourceInspection(inspection containertypes.InspectResponse, id, n
 	if inspection.State == nil {
 		return errors.New("container state is absent")
 	}
-	if !inspection.State.Running || inspection.State.Status != containertypes.StateRunning {
+	if !inspection.State.Running || !measurable(inspection.State.Status) {
 		return errResourceRuntimeGone
 	}
 	return nil
