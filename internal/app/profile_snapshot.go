@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/hyscale-lab/aries/pkg/config"
+	"github.com/hyscale-lab/aries/pkg/core"
 )
 
 // persistProfileSnapshot writes only comparison metadata. Keep this allowlist
@@ -57,6 +58,14 @@ func persistProfileSnapshot(root string, cfg config.Config) error {
 	}
 	if cfg.Model.ReasoningEffort != "" {
 		snapshot["reasoning_effort"] = cfg.Model.ReasoningEffort
+	}
+	// The suspension mode is always written, so "off" is recorded rather than
+	// left indistinguishable from a build that predates suspension. The grace
+	// period only applies to pause, including an explicit zero.
+	suspend := cfg.Bridge.SuspendPolicy()
+	snapshot["bridge_suspend_mode"] = suspend.Mode
+	if suspend.Mode == core.SuspendPause {
+		snapshot["bridge_suspend_grace_ms"] = suspend.GraceMS
 	}
 	b, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {

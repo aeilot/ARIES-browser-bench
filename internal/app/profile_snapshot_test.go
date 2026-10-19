@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/hyscale-lab/aries/pkg/config"
+	"github.com/hyscale-lab/aries/pkg/core"
 )
 
 func TestProfileSnapshotAllowlist(t *testing.T) {
@@ -92,6 +93,44 @@ func TestProfileSnapshotIndependentResourceAndRequestSettings(t *testing.T) {
 		if _, ok := snapshot[key]; ok {
 			t.Fatalf("omitted default manufactured for %s", key)
 		}
+	}
+}
+
+func TestProfileSnapshotSuspendPolicy(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		suspend *core.SandboxSuspend
+		mode    string
+		grace   any
+	}{
+		{"omitted", nil, core.SuspendOff, nil},
+		{"proxy", &core.SandboxSuspend{Mode: core.SuspendProxy, GraceMS: 500}, core.SuspendProxy, nil},
+		{"pause", &core.SandboxSuspend{Mode: core.SuspendPause, GraceMS: 1000}, core.SuspendPause, float64(1000)},
+		{"pause-zero", &core.SandboxSuspend{Mode: core.SuspendPause}, core.SuspendPause, float64(0)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "run")
+			if e := createRunOutputRoot(root); e != nil {
+				t.Fatal(e)
+			}
+			cfg := config.Config{}
+			cfg.Bridge.Suspend = c.suspend
+			if e := persistProfileSnapshot(root, cfg); e != nil {
+				t.Fatal(e)
+			}
+			b, e := os.ReadFile(filepath.Join(root, "run-profile.json"))
+			if e != nil {
+				t.Fatal(e)
+			}
+			var snapshot map[string]any
+			if e = json.Unmarshal(b, &snapshot); e != nil {
+				t.Fatal(e)
+			}
+			grace, ok := snapshot["bridge_suspend_grace_ms"]
+			if snapshot["bridge_suspend_mode"] != c.mode || (c.grace == nil && ok) || (c.grace != nil && grace != c.grace) {
+				t.Fatal(snapshot)
+			}
+		})
 	}
 }
 
