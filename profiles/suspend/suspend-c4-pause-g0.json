@@ -1,0 +1,59 @@
+{
+  "name": "suspend-c4-pause-g0",
+  "versions_file": "../../configs/versions.json",
+  "overrides_file": "cpuunl-overrides.json",
+  "execution": {
+    "concurrency": 4,
+    "loop_duration": "15m"
+  },
+  "benchmark": {
+    "type": "browserbench",
+    "root": ".cache/browserbench",
+    "tasks": [
+      "2aa5dd83fbcd0dce9a3dd4592106e5b5edf738008d932e357d477bba80e59ccf"
+    ],
+    "environment": {
+      "image": "mcr.microsoft.com/playwright/mcp:v0.0.83",
+      "workdir": "/home/node"
+    }
+  },
+  "harness": {
+    "type": "hermes",
+    "deployment": {
+      "backend": "docker",
+      "docker": {
+        "socket": "/var/run/docker.sock"
+      }
+    }
+  },
+  "sandbox": {
+    "deployment": {
+      "backend": "docker",
+      "docker": {
+        "socket": "/var/run/docker.sock"
+      }
+    }
+  },
+  "bridge": {
+    "deployment": {
+      "backend": "docker"
+    },
+    "type": "hermes-ssh",
+    "mode": "managed",
+    "suspend": {
+      "mode": "pause",
+      "grace_ms": 0
+    }
+  },
+  "runtime": {
+    "backend": "deepseek",
+    "mode": "external"
+  },
+  "model": {
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "id": "deepseek-flash",
+    "reasoning_effort": "low"
+  },
+  "output_dir": "runs"
+}

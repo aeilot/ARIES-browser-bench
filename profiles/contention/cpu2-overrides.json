@@ -1,0 +1,6 @@
+{
+  "agent_timeout_seconds": 600,
+  "agent_sandbox_resources": {
+    "cpu": 2
+  }
+}
